@@ -1,10 +1,10 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-10 21:42:16
+ * @LastEditTime: 2022-04-11 16:44:42
  * @LastEditors: QQYYHH
  * @Description: 主函数
- * @FilePath: /pwn/compiler/qcc.c
+ * @FilePath: /pwn/qcc/qcc.c
  * welcome to my github: https://github.com/QQYYHH
  */
 
@@ -83,6 +83,19 @@ Ast *make_ast_str(char *str)
     return r;
 }
 
+int priority(char op) {
+  switch (op) {
+    case '+':
+    case '-':
+        return 1;
+    case '*':
+    case '/':
+        return 2;
+    default:
+      error("Unknown binary operator: %c", op);
+  }
+}
+
 void skip_space(void)
 {
     int c;
@@ -131,29 +144,28 @@ Ast *parse_prim(void)
     }
 }
 
-Ast *parse_expr2(Ast *left)
+// prev_priority 代表上一个符号的优先级
+Ast *parse_expr2(int prev_priority)
 {
     skip_space();
-    int c = getc(stdin);
-    if (c == EOF)
-        return left;
-    int op;
-    if (c == '+')
-        op = AST_OP_PLUS;
-    else if (c == '-')
-        op = AST_OP_MINUS;
-    else
-        error("Operator expected, but got '%c'", c);
-    skip_space();
-    Ast *right = parse_prim();
-    left = make_ast_op(op, left, right);
-    return parse_expr2(left);
+    Ast *ast = parse_prim();
+    for(;;){
+        skip_space();
+        int c = getc(stdin);
+        if(c == EOF) return ast;
+        int prio = priority(c);
+        if(prio <= prev_priority){
+            ungetc(c, stdin);
+            return ast;
+        }
+        ast = make_ast_op(c, ast, parse_expr2(prio));
+    }
 }
 
 Ast *parse_expr(void)
 {
-    Ast *left = parse_prim();
-    return parse_expr2(left);
+    // 初始化上一个优先级为 0
+    return parse_expr2(0);
 }
 
 Ast *parse_string(void)
@@ -211,26 +223,36 @@ void emit_string(Ast *ast)
 void emit_binop(Ast *ast)
 {
     char *op;
-    if (ast->type == AST_OP_PLUS)
-        op = "add";
-    else if (ast->type == AST_OP_MINUS)
-        op = "sub";
-    else
-        error("invalid operator");
+    switch (ast->type){
+        case '+': op = "add"; break;
+        case '-': op = "sub"; break;
+        case '*': op = "imul"; break;
+        case '/': op = "idiv"; break;
+        default: error("invalid operator '%c'", ast->type);
+    }
     emit_intexpr(ast->left);
     printf("push %%rax\n\t");
     emit_intexpr(ast->right);
     printf("mov %%rax, %%rbx\n\t");
     printf("pop %%rax\n\t");
-    printf("%s %%rbx, %%rax\n\t", op);
+    if(ast->type == '/'){
+        printf("mov $0, %%rdx\n\t");
+        printf("idiv %%rbx\n\t");
+    }
+    else{
+        printf("%s %%rbx, %%rax\n\t", op);
+    }
+    
 }
 
 void ensure_intexpr(Ast *ast)
 {
-    if (ast->type != AST_OP_PLUS &&
-        ast->type != AST_OP_MINUS &&
-        ast->type != AST_INT)
-        error("integer or binary operator expected");
+    switch (ast->type) {
+    case '+': case '-': case '*': case '/': case AST_INT:
+      return;
+    default:
+      error("integer or binary operator expected");
+  }
 }
 
 void emit_intexpr(Ast *ast)
@@ -246,11 +268,18 @@ void print_ast(Ast *ast)
 {
     switch (ast->type)
     {
-    case AST_OP_PLUS:
+    case '+':
         printf("(+ ");
         goto print_op;
-    case AST_OP_MINUS:
+    case '-':
         printf("(- ");
+        goto print_op;
+    case '*':
+        printf("(*");
+        goto print_op;
+    case '/':
+        printf("(/");
+        goto print_op;
     print_op:
         print_ast(ast->left);
         printf(" ");

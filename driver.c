@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:53:55
- * @LastEditTime: 2022-04-11 15:09:40
+ * @LastEditTime: 2022-04-12 00:40:28
  * @LastEditors: QQYYHH
  * @Description: 用于测试主函数
  * @FilePath: /pwn/qcc/driver.c
@@ -16,6 +16,7 @@
 #define WEAK __attribute__((weak))
 extern int intfn(void) WEAK;
 extern char *stringfn(void) WEAK;
+extern int mymain(void) WEAK;
 
 int main(int argc, char **argv)
 {
@@ -26,6 +27,9 @@ int main(int argc, char **argv)
     else if (stringfn)
     {
         printf("%s\n", stringfn());
+    }
+    else if(mymain){
+        printf("%d\n", mymain());
     }
     else
     {

@@ -37,4 +37,9 @@ function testfail {
 
 # -s 不输出执行过的命令，silence模式
 make -s qcc
-compile "$1"
+# compile "$1"
+s="1+2 * 3 - 4 / 2;"
+# s="1 + 2 * 3;"
+s='a=1 ; b = a * 2 + 2 / 3 ; c=2 * a+b;c * 2 + 5 / 2;'
+echo "$s" | ./qcc
+compile "$s"

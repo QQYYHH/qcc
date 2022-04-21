@@ -1,4 +1,13 @@
 #!/bin/bash
+###
+ # @Author: QQYYHH
+ # @Date: 2022-04-10 21:13:06
+ # @LastEditTime: 2022-04-21 14:53:25
+ # @LastEditors: QQYYHH
+ # @Description: 
+ # @FilePath: /pwn/qcc/mytest.sh
+ # welcome to my github: https://github.com/QQYYHH
+### 
 
 function compile {
   echo "$1" | ./qcc > tmp.s
@@ -39,7 +48,9 @@ function testfail {
 make -s qcc
 # compile "$1"
 s="1+2 * 3 - 4 / 2;"
-# s="1 + 2 * 3;"
 s='a=1 ; b = a * 2 + 2 / 3 ; c=2 * a+b;c * 2 + 5 / 2;'
+# s="a = 1; b = a + 1; c = b + 1; d = c + 1; e = d + 1; f = e  +1; sum6(a,b,c,d,e,f);"
+s="sum2(1, 2,);"
+s="sub2(1, 2);"
 echo "$s" | ./qcc
 compile "$s"

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:53:55
- * @LastEditTime: 2022-04-12 00:40:28
+ * @LastEditTime: 2022-04-21 14:53:07
  * @LastEditors: QQYYHH
  * @Description: 用于测试主函数
  * @FilePath: /pwn/qcc/driver.c
@@ -17,7 +17,15 @@
 extern int intfn(void) WEAK;
 extern char *stringfn(void) WEAK;
 extern int mymain(void) WEAK;
-
+int sum2(int a, int b){
+    return a + b;
+}
+int sum6(int a, int b, int c, int d, int e, int f){
+    return a + b + c + d + e + f;
+}
+int sub2(int a, int b){
+    return a - b;
+}
 int main(int argc, char **argv)
 {
     if (intfn)

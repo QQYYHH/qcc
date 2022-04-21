@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-21 14:52:03
+ * @LastEditTime: 2022-04-21 17:10:00
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/qcc.c
@@ -16,21 +16,24 @@
 
 #define BUFLEN 256
 #define MAX_ARGS 6
+// 最大表达式的数量
+#define EXPR_LEN 100
 
 // 增加 AST节点类型的枚举定义
 enum
 {
     AST_INT,
     AST_STR,
-    AST_SYM, 
-    AST_FUNCALL, 
+    AST_SYM,
+    AST_FUNCALL,
 };
 
 // 增加对变量的声明
-typedef struct Var{
+typedef struct Var
+{
     char *name;
     // 用于控制栈中生成的局部变量的位置
-    int pos; 
+    int pos;
     struct Var *next;
 } Var;
 
@@ -41,16 +44,24 @@ typedef struct Ast
     // 匿名联合，对应不同AST类型
     union
     {
-        Var *var;
         int ival;
-        char *sval;
+        // string
+        struct
+        {
+            char *sval;
+            // 字符串在程序中保存的位置
+            int sid;
+            struct Ast *snext;
+        };
         struct
         {
             struct Ast *left;
             struct Ast *right;
         };
+        Var *var;
         // 函数
-        struct{
+        struct
+        {
             char *fname;
             int nargs;
             struct Ast **args;
@@ -58,16 +69,15 @@ typedef struct Ast
     };
 } Ast;
 
-// 全局 变量链表
+// 全局 变量链表、字符串链表
 Var *vars = NULL;
+Ast *strings = NULL;
 // x64下函数前6个实参会依次放入下列寄存器
 char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
-
 
 void error(char *fmt, ...) __attribute__((noreturen));
 void emit_expr(Ast *ast);
 void emit_binop(Ast *ast);
-void emit_string(Ast *ast);
 // 递归下降语法分析函数的定义
 Ast *parse_string(void);
 Ast *parse_expr(void);
@@ -107,34 +117,45 @@ Ast *make_ast_str(char *str)
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_STR;
     r->sval = str;
+    r->snext = strings;
+    if (strings == NULL)
+        r->sid = 0;
+    else
+        r->sid = strings->sid + 1;
+    strings = r;
     return r;
 }
 
-Ast *make_ast_sym(Var *var){
+Ast *make_ast_sym(Var *var)
+{
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_SYM;
     r->var = var;
     return r;
 }
 
-Var *find_var(char *name) {
-  for (Var *v = vars; v; v = v->next) {
-    if (!strcmp(name, v->name))
-      return v;
-  }
-  return NULL;
+Var *find_var(char *name)
+{
+    for (Var *v = vars; v; v = v->next)
+    {
+        if (!strcmp(name, v->name))
+            return v;
+    }
+    return NULL;
 }
 
-Var *make_var(char *name){
+Var *make_var(char *name)
+{
     Var *v = malloc(sizeof(Var));
     v->name = name;
-    v->pos = vars? vars->pos + 1: 1;
+    v->pos = vars ? vars->pos + 1 : 1;
     v->next = vars;
     vars = v;
     return v;
 }
 
-Ast *make_ast_funcall(char *fname, int nargs, Ast **args){
+Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
+{
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_FUNCALL;
     r->fname = fname;
@@ -143,17 +164,21 @@ Ast *make_ast_funcall(char *fname, int nargs, Ast **args){
     return r;
 }
 
-int priority(char op) {
-  switch (op) {
+int priority(char op)
+{
+    switch (op)
+    {
     case '=':
         return 1;
-    case '+': case '-':
+    case '+':
+    case '-':
         return 2;
-    case '*': case '/':
+    case '*':
+    case '/':
         return 3;
     default:
         return -1;
-  }
+    }
 }
 
 void skip_space(void)
@@ -170,6 +195,10 @@ void skip_space(void)
 }
 
 // ===================== parse ====================
+/**
+ * 常数
+ * number := digit
+ */
 Ast *parse_number(int n)
 {
     for (;;)
@@ -183,7 +212,10 @@ Ast *parse_number(int n)
         n = n * 10 + (c - '0');
     }
 }
-
+/**
+ * 字符串常量
+ * string := "xxx"
+ */ 
 Ast *parse_string(void)
 {
     char *buf = malloc(BUFLEN);
@@ -200,7 +232,7 @@ Ast *parse_string(void)
         {
             c = getc(stdin);
             if (c == EOF)
-                error("Unterminated string");
+                error("Unterminated \\");
         }
         buf[i++] = c;
         if (i == BUFLEN - 1)
@@ -210,64 +242,91 @@ Ast *parse_string(void)
     return make_ast_str(buf);
 }
 
-char *parse_ident(char c){
+/**
+ * 标识符
+ * identifier := alnum
+ */
+char *parse_ident(char c)
+{
     char *buf = malloc(BUFLEN);
     buf[0] = c;
     int i = 1;
-    for(;;){
+    for (;;)
+    {
         c = getc(stdin);
         // alnum: alpha + number
-        if(!isalnum(c)){
+        if (!isalnum(c))
+        {
             ungetc(c, stdin);
             break;
         }
         buf[i++] = c;
-        if(i == BUFLEN - 1)
+        if (i == BUFLEN - 1)
             error("Identifier too long");
     }
     buf[i] = '\0';
     return buf;
 }
 
-Ast *parse_func_args(char *fname){
+/**
+ * 函数参数
+ * func_args := expr2 | expr2, func_args | NULL
+ */
+Ast *parse_func_args(char *fname)
+{
     Ast **args = malloc(sizeof(Ast *) * (MAX_ARGS + 1));
     int i = 0, nargs = 0;
-    for(; i < MAX_ARGS + 1; i++){
-        if(i == MAX_ARGS) error("Too many arguments: %s", fname);
+    for (; i < MAX_ARGS + 1; i++)
+    {
+        if (i == MAX_ARGS)
+            error("Too many arguments: %s", fname);
         skip_space();
         int c = getc(stdin);
-        if(c == ')') break;
+        if (c == ')')
+            break;
         ungetc(c, stdin);
         args[i] = parse_expr2(0);
         nargs++;
         c = getc(stdin);
-        if(c == ')') break;
-        if(c == ','){
+        if (c == ')')
+            break;
+        if (c == ',')
+        {
             skip_space();
             int c2 = getc(stdin);
-            if(c2 == ')') error("Can not find next arg");
+            if (c2 == ')')
+                error("Can not find next arg");
             ungetc(c2, stdin);
         }
-        else error("Unexpected character: '%c'", c);
+        else
+            error("Unexpected character: '%c'", c);
     }
     return make_ast_funcall(fname, nargs, args);
 }
 
-Ast *parse_ident_or_func(char c){
+/**
+ * 常量或者函数
+ * ident_or_func := identifier | function
+ * function := identifer ( func_args )
+ */
+Ast *parse_ident_or_func(char c)
+{
     char *name = parse_ident(c);
     skip_space();
     int c2 = getc(stdin);
     // funcall
-    if(c2 == '(') return parse_func_args(name);
+    if (c2 == '(')
+        return parse_func_args(name);
     // identifier
     ungetc(c2, stdin);
     Var *v = find_var(name);
-    if(!v) v = make_var(name);
+    if (!v)
+        v = make_var(name);
     return make_ast_sym(v);
 }
 
-
 /**
+ * 基本单元，可以是常量、字符串常量、标识符 或者为空
  * prim := number | string | symbols [variable] | NULL
  */
 Ast *parse_prim(void)
@@ -281,7 +340,8 @@ Ast *parse_prim(void)
     {
         return parse_string();
     }
-    else if(isalnum(c)) return parse_ident_or_func(c);
+    else if (isalnum(c))
+        return parse_ident_or_func(c);
     else if (c == EOF)
     {
         return NULL;
@@ -290,9 +350,10 @@ Ast *parse_prim(void)
 }
 
 /**
+ * 混合运算表达式 或 赋值语句
  * prev_priority 代表上一个符号的优先级
  * expr2 := + - * / = 混合运算以及赋值语句
- * 
+ *
  * expr2 := prim cal expr2 | prim
  * cal := + - * / =
  */
@@ -300,13 +361,17 @@ Ast *parse_expr2(int prev_priority)
 {
     skip_space();
     Ast *ast = parse_prim();
-    if(!ast) return NULL;
-    for(;;){
+    if (!ast)
+        return NULL;
+    for (;;)
+    {
         skip_space();
         int c = getc(stdin);
-        if(c == EOF) return ast;
+        if (c == EOF)
+            return ast;
         int prio = priority(c);
-        if(prio <= prev_priority){
+        if (prio <= prev_priority)
+        {
             ungetc(c, stdin);
             return ast;
         }
@@ -314,20 +379,23 @@ Ast *parse_expr2(int prev_priority)
     }
 }
 /**
+ * 完整表达式，以分号【;】结束
  * expr := expr2 ;
  */
 Ast *parse_expr(void)
 {
     // 初始化优先级为 0
     Ast *ast = parse_expr2(0);
-    if(!ast) return NULL;
+    if (!ast)
+        return NULL;
     skip_space();
     int c = getc(stdin);
-    if(c != ';') error("Unterminated expression");
+    if (c != ';')
+        error("Unterminated expression");
     return ast;
 }
 
-
+// ===================== emit ====================
 
 void print_quote(char *p)
 {
@@ -340,95 +408,122 @@ void print_quote(char *p)
     }
 }
 
-// ===================== emit ====================
-void emit_string(Ast *ast)
+void emit_data_section()
 {
-    printf("\t.data\n"
-           ".mydata:\n\t"
-           ".string \"");
-    print_quote(ast->sval);
-    printf("\"\n\t"
-           ".text\n\t"
-           ".global stringfn\n"
-           "stringfn:\n\t"
-           "lea .mydata(%%rip) %%rax\n\t"
-           "ret\n");
-    return;
+    if (!strings)
+        return;
+    printf("\t.data\n");
+    for (Ast *p = strings; p; p = p->snext)
+    {
+        printf(".s%d:\n\t", p->sid);
+        printf(".string \"");
+        // printf("%s", p->sval);
+        print_quote(p->sval);
+        printf("\"\n");
+    }
 }
+
 void emit_binop(Ast *ast)
 {
     // 如果是赋值语句
-    if(ast->type == '='){
+    if (ast->type == '=')
+    {
         emit_expr(ast->right);
         // 如果赋值号左边不是 变量，则抛出异常
-        if(ast->left->type != AST_SYM) error("Symbol expected");
+        if (ast->left->type != AST_SYM)
+            error("Symbol expected");
         // 假设类型占用 8字节
         printf("mov %%rax, -%d(%%rbp)\n\t", ast->left->var->pos * 8);
-        return ;
+        return;
     }
     // 如果是计算表达式
     char *op;
-    switch (ast->type){
-        case '+': op = "add"; break;
-        case '-': op = "sub"; break;
-        case '*': op = "imul"; break;
-        case '/': op = "idiv"; break;
-        default: error("invalid operator '%c'", ast->type);
+    switch (ast->type)
+    {
+    case '+':
+        op = "add";
+        break;
+    case '-':
+        op = "sub";
+        break;
+    case '*':
+        op = "imul";
+        break;
+    case '/':
+        op = "idiv";
+        break;
+    default:
+        error("invalid operator '%c'", ast->type);
     }
     emit_expr(ast->left);
     printf("push %%rax\n\t");
     emit_expr(ast->right);
     printf("mov %%rax, %%rbx\n\t");
     printf("pop %%rax\n\t");
-    if(ast->type == '/'){
+    if (ast->type == '/')
+    {
         printf("mov $0, %%rdx\n\t");
         printf("idiv %%rbx\n\t");
     }
-    else{
+    else
+    {
         printf("%s %%rbx, %%rax\n\t", op);
     }
-    
 }
 
 void ensure_intexpr(Ast *ast)
 {
-    switch (ast->type) {
-    case '+': case '-': case '*': case '/': case AST_INT:
-      return;
+    switch (ast->type)
+    {
+    case '+':
+    case '-':
+    case '*':
+    case '/':
+    case AST_INT:
+        return;
     default:
-      error("integer or binary operator expected");
-  }
+        error("integer or binary operator expected");
+    }
 }
 
 void emit_expr(Ast *ast)
 {
-    switch(ast->type){
-        case AST_INT:
-            printf("mov $%d, %%rax\n\t", ast->ival);    
-            break;
-        case AST_SYM:
-            printf("mov -%d(%%rbp), %%rax\n\t", ast->var->pos * 8);
-            break;
-        case AST_FUNCALL:
-            // 调用前 先将参数寄存器压栈，保存执行环境
-            for(int i = 0; i < ast->nargs; i++){
-                printf("push %%%s\n\t", REGS[i]);
-            }
-            for(int i = 0; i < ast->nargs; i++){
-                // 解析参数
-                emit_expr(ast->args[i]);
-                printf("mov %%rax, %%%s\n\t", REGS[i]);
-            }
-            printf("mov $0, %%rax\n\t"); // 将rax初始化为0
-            printf("call %s\n\t", ast->fname);
-            // 调用后，恢复执行环境
-            for(int i = ast->nargs - 1; i >= 0; i--){
-                printf("pop %%%s\n\t", REGS[i]);
-            }
-            break;
-        default:
-            // 其他情况， 解析二元运算树
-            emit_binop(ast);
+    switch (ast->type)
+    {
+    case AST_INT:
+        printf("mov $%d, %%rax\n\t", ast->ival);
+        break;
+    case AST_SYM:
+        printf("mov -%d(%%rbp), %%rax\n\t", ast->var->pos * 8);
+        break;
+    case AST_STR:
+        // x64特有的rip相对寻址，.s是数据段中字符串的标识符
+        // 比如数据段中有.s0, .s1, .s2等，分别代表不同的字符串
+        printf("lea .s%d(%%rip), %%rax\n\t", ast->sid);
+        break;
+    case AST_FUNCALL:
+        // 调用前 先将参数寄存器压栈，保存执行环境
+        for (int i = 0; i < ast->nargs; i++)
+        {
+            printf("push %%%s\n\t", REGS[i]);
+        }
+        for (int i = 0; i < ast->nargs; i++)
+        {
+            // 解析参数
+            emit_expr(ast->args[i]);
+            printf("mov %%rax, %%%s\n\t", REGS[i]);
+        }
+        printf("mov $0, %%rax\n\t"); // 将rax初始化为0
+        printf("call %s\n\t", ast->fname);
+        // 调用后，恢复执行环境
+        for (int i = ast->nargs - 1; i >= 0; i--)
+        {
+            printf("pop %%%s\n\t", REGS[i]);
+        }
+        break;
+    default:
+        // 其他情况， 解析二元运算树
+        emit_binop(ast);
     }
 }
 
@@ -440,17 +535,20 @@ void print_ast(Ast *ast)
         printf("%d", ast->ival);
         break;
     case AST_STR:
+        printf("\"");
         print_quote(ast->sval);
+        printf("\"");
         break;
     case AST_SYM:
         printf("%s", ast->var->name);
         break;
     case AST_FUNCALL:
         printf("%s(", ast->fname);
-        for (int i = 0; ast->args[i]; i++) {
+        for (int i = 0; ast->args[i]; i++)
+        {
             print_ast(ast->args[i]);
             if (ast->args[i + 1])
-            printf(",");
+                printf(",");
         }
         printf(")");
         break;
@@ -463,44 +561,44 @@ void print_ast(Ast *ast)
     }
 }
 
-void compile(Ast *ast)
-{
-    if (ast->type == AST_STR)
-        emit_string(ast);
-    else
-    {
-        printf("\t.text\n\t"
-               ".global intfn\n"
-               "intfn:\n\t");
-        emit_binop(ast);
-        printf("ret\n");
-    }
-}
-
 int main(int argc, char **argv)
 {
-    printf(".text\n\t"
-           ".global mymain\n"
-           "mymain:\n\t"
-           // 堆栈平衡
-           "push %%rbp\n\t"
-           "mov %%rsp, %%rbp\n\t"
-           "sub $200, %%rsp\n\t");
-    for(;;){
+    int want_ast_tree = (argc > 1 && !strcmp("-p", argv[1]));
+    Ast *exprs[EXPR_LEN];
+    int i;
+    for (i = 0; i < EXPR_LEN; i++)
+    {
         Ast *ast = parse_expr();
-        if(!ast) break;
-        if(argc > 1 && !strcmp("-p", argv[1])){
-            print_ast(ast);
-        }
-        else{
-            emit_expr(ast);
-        }
-        
+        if (!ast)
+            break;
+        exprs[i] = ast;
     }
-    // 堆栈平衡
-    printf("add $200, %%rsp\n\t"
-           "pop %%rbp\n\t"
-           "ret\n");
-    
+    int nexpr = i;
+    if (!want_ast_tree)
+    {
+        emit_data_section();
+        printf("\t.text\n\t"
+               ".global mymain\n"
+               "mymain:\n\t"
+               // 堆栈平衡
+               "push %%rbp\n\t"
+               "mov %%rsp, %%rbp\n\t"
+               "sub $200, %%rsp\n\t");
+    }
+    for (i = 0; i < nexpr; i++)
+    {
+        if (want_ast_tree)
+            print_ast(exprs[i]);
+        else
+            emit_expr(exprs[i]);
+    }
+    if (!want_ast_tree)
+    {
+        // 堆栈平衡
+        printf("add $200, %%rsp\n\t"
+               "pop %%rbp\n\t"
+               "ret\n");
+    }
+
     return 0;
 }

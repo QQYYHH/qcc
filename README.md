@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-04-12 14:22:31
+ * @LastEditTime: 2022-04-21 17:11:02
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -16,5 +16,8 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 完善表达式：
 - 加减乘除混合运算
 - 变量赋值语句
+add function call
 ## TODO
-function call
+- [x] reintroduce string
+- [] add char
+- [] abstract part of code as lexer

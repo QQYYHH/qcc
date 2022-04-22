@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-22 13:01:42
+ * @LastEditTime: 2022-04-22 13:47:03
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/qcc.c
@@ -23,6 +23,7 @@
 enum
 {
     AST_INT,
+    AST_CHAR, 
     AST_STR,
     AST_VAR,
     AST_FUNCALL,
@@ -35,8 +36,11 @@ typedef struct Ast
     // 匿名联合，对应不同AST类型
     union
     {
+        // Integer
         int ival;
-        // string
+        // Char
+        char c;
+        // String
         struct
         {
             char *sval;
@@ -56,7 +60,7 @@ typedef struct Ast
             struct Ast *left;
             struct Ast *right;
         };
-        // 函数
+        // Function call
         struct
         {
             char *fname;
@@ -75,8 +79,7 @@ char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 void error(char *fmt, ...) __attribute__((noreturen));
 void emit_expr(Ast *ast);
 void emit_binop(Ast *ast);
-// 递归下降语法分析函数的定义
-Ast *parse_string(void);
+// 必要的递归下降语法分析函数的定义
 Ast *parse_expr(void);
 Ast *parse_expr2(int prec);
 
@@ -98,6 +101,13 @@ Ast *make_ast_op(int type, Ast *left, Ast *right)
     r->type = type;
     r->left = left;
     r->right = right;
+    return r;
+}
+
+Ast *make_ast_char(char c){
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_CHAR;
+    r->c = c;
     return r;
 }
 
@@ -199,6 +209,24 @@ Ast *parse_number(int n)
         n = n * 10 + (c - '0');
     }
 }
+
+/**
+ * 单字符
+ */ 
+Ast *parse_char(){
+    char c = getc(stdin);
+    if(c == EOF) goto err;
+    if(c == '\\'){
+        c = getc(stdin);
+        if(c == EOF) goto err;
+    }
+    char c2 = getc(stdin);
+    if(c2 != '\'') error("Malformed char constant");
+    return make_ast_char(c);
+err:
+    error("Unterminated char");
+}
+
 /**
  * 字符串常量
  * string := "xxx"
@@ -311,26 +339,24 @@ Ast *parse_ident_or_func(char c)
 }
 
 /**
- * 基本单元，可以是常量、字符串常量、标识符 或者为空
- * prim := number | string | symbols [variable] | NULL
+ * 基本单元，可以是整数常量、单字符、字符串常量、标识符 或者为空
+ * prim := number | char | string | variable | NULL
  */
 Ast *parse_prim(void)
 {
     int c = getc(stdin);
     if (isdigit(c))
-    {
         return parse_number(c - '0');
-    }
-    else if (c == '"')
-    {
+
+    if (c == '"')
         return parse_string();
-    }
-    else if (isalnum(c))
+    if (c == '\'')
+        return parse_char();
+    if (isalpha(c))
         return parse_ident_or_func(c);
-    else if (c == EOF)
-    {
+
+    if (c == EOF)
         return NULL;
-    }
     error("Don't know how to handle '%c'", c);
 }
 
@@ -481,6 +507,9 @@ void emit_expr(Ast *ast)
     case AST_VAR:
         printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
         break;
+    case AST_CHAR:
+        printf("mov $%d, %%rax\n\t", ast->c);
+        break;
     case AST_STR:
         // x64特有的rip相对寻址，.s是数据段中字符串的标识符
         // 比如数据段中有.s0, .s1, .s2等，分别代表不同的字符串
@@ -518,6 +547,9 @@ void print_ast(Ast *ast)
     {
     case AST_INT:
         printf("%d", ast->ival);
+        break;
+    case AST_CHAR:
+        printf("%c", ast->c);
         break;
     case AST_STR:
         printf("\"");
@@ -582,8 +614,8 @@ int main(int argc, char **argv)
         // 堆栈平衡
         printf("add $200, %%rsp\n\t"
                "pop %%rbp\n\t"
-               "ret\n");
+               "ret");
     }
-
+    printf("\n");
     return 0;
 }

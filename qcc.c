@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-21 17:10:00
+ * @LastEditTime: 2022-04-22 13:01:42
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/qcc.c
@@ -24,18 +24,9 @@ enum
 {
     AST_INT,
     AST_STR,
-    AST_SYM,
+    AST_VAR,
     AST_FUNCALL,
 };
-
-// 增加对变量的声明
-typedef struct Var
-{
-    char *name;
-    // 用于控制栈中生成的局部变量的位置
-    int pos;
-    struct Var *next;
-} Var;
 
 // 增加AST节点定义
 typedef struct Ast
@@ -53,12 +44,18 @@ typedef struct Ast
             int sid;
             struct Ast *snext;
         };
+        // Variable
+        struct{
+            char *vname;
+            // 用于控制栈中生成的局部变量的位置
+            int vpos; 
+            struct Ast *vnext;
+        };
         struct
         {
             struct Ast *left;
             struct Ast *right;
         };
-        Var *var;
         // 函数
         struct
         {
@@ -70,7 +67,7 @@ typedef struct Ast
 } Ast;
 
 // 全局 变量链表、字符串链表
-Var *vars = NULL;
+Ast *vars = NULL;
 Ast *strings = NULL;
 // x64下函数前6个实参会依次放入下列寄存器
 char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
@@ -118,40 +115,30 @@ Ast *make_ast_str(char *str)
     r->type = AST_STR;
     r->sval = str;
     r->snext = strings;
-    if (strings == NULL)
-        r->sid = 0;
-    else
-        r->sid = strings->sid + 1;
+    r->sid = strings? strings->sid + 1: 0;
     strings = r;
     return r;
 }
 
-Ast *make_ast_sym(Var *var)
+Ast *make_ast_var(char *vname)
 {
     Ast *r = malloc(sizeof(Ast));
-    r->type = AST_SYM;
-    r->var = var;
+    r->type = AST_VAR;
+    r->vname = vname;
+    r->vpos = vars? vars->vpos + 1: 1;
+    r->vnext = vars;
+    vars = r;
     return r;
 }
 
-Var *find_var(char *name)
+Ast *find_var(char *name)
 {
-    for (Var *v = vars; v; v = v->next)
+    for (Ast *v = vars; v; v = v->vnext)
     {
-        if (!strcmp(name, v->name))
+        if (!strcmp(name, v->vname))
             return v;
     }
     return NULL;
-}
-
-Var *make_var(char *name)
-{
-    Var *v = malloc(sizeof(Var));
-    v->name = name;
-    v->pos = vars ? vars->pos + 1 : 1;
-    v->next = vars;
-    vars = v;
-    return v;
 }
 
 Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
@@ -319,10 +306,8 @@ Ast *parse_ident_or_func(char c)
         return parse_func_args(name);
     // identifier
     ungetc(c2, stdin);
-    Var *v = find_var(name);
-    if (!v)
-        v = make_var(name);
-    return make_ast_sym(v);
+    Ast *v = find_var(name);
+    return v? v: make_ast_var(name);
 }
 
 /**
@@ -430,10 +415,10 @@ void emit_binop(Ast *ast)
     {
         emit_expr(ast->right);
         // 如果赋值号左边不是 变量，则抛出异常
-        if (ast->left->type != AST_SYM)
+        if (ast->left->type != AST_VAR)
             error("Symbol expected");
         // 假设类型占用 8字节
-        printf("mov %%rax, -%d(%%rbp)\n\t", ast->left->var->pos * 8);
+        printf("mov %%rax, -%d(%%rbp)\n\t", ast->left->vpos * 8);
         return;
     }
     // 如果是计算表达式
@@ -493,8 +478,8 @@ void emit_expr(Ast *ast)
     case AST_INT:
         printf("mov $%d, %%rax\n\t", ast->ival);
         break;
-    case AST_SYM:
-        printf("mov -%d(%%rbp), %%rax\n\t", ast->var->pos * 8);
+    case AST_VAR:
+        printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
         break;
     case AST_STR:
         // x64特有的rip相对寻址，.s是数据段中字符串的标识符
@@ -539,8 +524,8 @@ void print_ast(Ast *ast)
         print_quote(ast->sval);
         printf("\"");
         break;
-    case AST_SYM:
-        printf("%s", ast->var->name);
+    case AST_VAR:
+        printf("%s", ast->vname);
         break;
     case AST_FUNCALL:
         printf("%s(", ast->fname);

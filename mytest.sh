@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-04-25 15:18:20
+ # @LastEditTime: 2022-04-25 17:26:53
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -33,6 +33,7 @@ function test {
     echo "Test failed: $expected expected but got $result"
     exit
   fi
+  echo "[*] success on expr: $expr"
 }
 
 function testfail {
@@ -42,19 +43,22 @@ function testfail {
     echo "Should fail to compile, but succeded: $expr"
     exit
   fi
+  echo "[*] success on expr: $expr"
 }
 
 # -s 不输出执行过的命令，silence模式
 make -s qcc
 # compile "$1"
-s="1+2 * 3 - 4 / 2;"
-s='a=1 ; b = a * 2 + 2 / 3 ; c=2 * a+b;c * 2 + 5 / 2;' # 10
-# s="a = 1; b = a + 1; c = b + 1; d = c + 1; e = d + 1; f = e  +1; sum6(a,b,c,d,e,f);" # 21
-# s="sum2(1, 2,);"
-# s="sub2(1, 2);"
-# s='printf("abc\"");3;'
-# s="printf(\"the character is: %c\", 'a' + 1);2;"
-# s=" 'a2' ;"
-s="a = \"hello_worldxxxxxxxx %c xxxxx\"; printf(a, 'b');"
-echo "$s" | ./qcc
-compile "$s"
+test 5 "1+2 * 3 - 4 / 2;"
+test 1 "int a = 1;"
+test 3 "int a = 1; int b = a + 2;"
+test 10 'int a = 1 ; int  b = a * 2 + 2 / 3 ; int c=2 * a+b;c * 2 + 5 / 2;'
+test 21 "int a = 1; int b = a + 1; int c = b + 1; int d = c + 1; int e = d + 1; int f = e  +1; sum6(a,b,c,d,e,f);"
+testfail "sum2(1, 2,);"
+test -1 "sub2(1, 2);"
+test "abc\"3" 'printf("abc\"");3;'
+test "the character is: b2" "printf(\"the character is: %c\", 'a' + 1);2;"
+test "hello_worldxxxxxxxx b xxxxx3" "int a = \"hello_worldxxxxxxxx %c xxxxx\"; printf(a, 'b');3;"
+# s="int a = 1; int b = a + 2;"
+# echo "$s" | ./qcc
+# compile "$s"

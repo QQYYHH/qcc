@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-25 15:05:12
+ * @LastEditTime: 2022-04-25 17:24:39
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -26,12 +26,22 @@ enum
     AST_STR,
     AST_VAR,
     AST_FUNCALL,
+    AST_DECL, // declaration
+};
+
+// 不同的C类型
+enum {
+  CTYPE_VOID,
+  CTYPE_INT,
+  CTYPE_CHAR,
+  CTYPE_STR,
 };
 
 // 增加AST节点定义
 typedef struct Ast
 {
     int type;
+    char ctype;
     // 匿名联合，对应不同AST类型
     union
     {
@@ -54,6 +64,7 @@ typedef struct Ast
             int vpos; 
             struct Ast *vnext;
         };
+        // Binary operation + - * /
         struct
         {
             struct Ast *left;
@@ -66,20 +77,23 @@ typedef struct Ast
             int nargs;
             struct Ast **args;
         };
+        // Declaration
+        struct{
+            struct Ast *decl_var;
+            struct Ast *decl_init;
+        };
     };
 } Ast;
 
 // 全局 变量链表、字符串链表
-Ast *vars = NULL;
-Ast *strings = NULL;
+static Ast *vars = NULL;
+static Ast *strings = NULL;
 // x64下函数前6个实参会依次放入下列寄存器
-char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+static char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 
-void emit_expr(Ast *ast);
-void emit_binop(Ast *ast);
+static void emit_expr(Ast *ast);
 // 必要的递归下降语法分析函数的定义
-Ast *parse_expr(void);
-Ast *parse_expr2(int prec);
+static Ast *parse_expr(int prev_priority);
 
 void error(char *fmt, ...)
 {
@@ -93,7 +107,7 @@ void error(char *fmt, ...)
 
 // ===================== make AST ====================
 
-Ast *make_ast_op(int type, Ast *left, Ast *right)
+static Ast *make_ast_op(int type, Ast *left, Ast *right)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = type;
@@ -102,14 +116,14 @@ Ast *make_ast_op(int type, Ast *left, Ast *right)
     return r;
 }
 
-Ast *make_ast_char(char c){
+static Ast *make_ast_char(char c){
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_CHAR;
     r->c = c;
     return r;
 }
 
-Ast *make_ast_int(int val)
+static Ast *make_ast_int(int val)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_INT;
@@ -117,7 +131,7 @@ Ast *make_ast_int(int val)
     return r;
 }
 
-Ast *make_ast_str(char *str)
+static Ast *make_ast_str(char *str)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_STR;
@@ -128,10 +142,11 @@ Ast *make_ast_str(char *str)
     return r;
 }
 
-Ast *make_ast_var(char *vname)
+static Ast *make_ast_var(int ctype, char *vname)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_VAR;
+    r->ctype = ctype;
     r->vname = vname;
     r->vpos = vars? vars->vpos + 1: 1;
     r->vnext = vars;
@@ -139,7 +154,7 @@ Ast *make_ast_var(char *vname)
     return r;
 }
 
-Ast *find_var(char *name)
+static Ast *find_var(char *name)
 {
     for (Ast *v = vars; v; v = v->vnext)
     {
@@ -149,7 +164,7 @@ Ast *find_var(char *name)
     return NULL;
 }
 
-Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
+static Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_FUNCALL;
@@ -159,7 +174,15 @@ Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
     return r;
 }
 
-int priority(char op)
+static Ast *make_ast_decl(Ast *var, Ast *init){
+  Ast *r = malloc(sizeof(Ast));
+  r->type = AST_DECL;
+  r->decl_var = var;
+  r->decl_init = init;
+  return r;
+}
+
+static int priority(char op)
 {
     switch (op)
     {
@@ -182,7 +205,7 @@ int priority(char op)
  * 函数参数
  * func_args := expr2 | expr2, func_args | NULL
  */
-Ast *parse_func_args(char *fname)
+static Ast *parse_func_args(char *fname)
 {
     Ast **args = malloc(sizeof(Ast *) * (MAX_ARGS + 1));
     int i = 0, nargs = 0;
@@ -193,7 +216,7 @@ Ast *parse_func_args(char *fname)
         Token *tok = read_token();
         if(is_punct(tok, ')')) break;
         unget_token(tok);
-        args[i] = parse_expr2(0);
+        args[i] = parse_expr(0);
         nargs++;
         tok = read_token();
         if(is_punct(tok, ')')) break;
@@ -215,7 +238,7 @@ Ast *parse_func_args(char *fname)
  * ident_or_func := identifier | function
  * function := identifer ( func_args )
  */
-Ast *parse_ident_or_func(char *name)
+static Ast *parse_ident_or_func(char *name)
 {
     Token *tok = read_token();
     // funcall
@@ -224,14 +247,17 @@ Ast *parse_ident_or_func(char *name)
     // identifier
     unget_token(tok);
     Ast *v = find_var(name);
-    return v? v: make_ast_var(name);
+    // must definition before using. 
+    if(!v)
+        error("Undefined varaible: %s", name);
+    return v;
 }
 
 /**
  * 基本单元，可以是整数常量、单字符、字符串常量、标识符 或者为空
  * prim := number | char | string | variable | funcall | NULL
  */
-Ast *parse_prim(void)
+static Ast *parse_prim(void)
 {
   Token *tok = read_token();
   if (!tok) return NULL;
@@ -251,6 +277,12 @@ Ast *parse_prim(void)
   }
 }
 
+// 确保左子节点ast是 变量类型
+static void ensure_lvalue(Ast *ast){
+    if (ast->type != AST_VAR)
+        error("variable expected");
+}
+
 /**
  * 混合运算表达式 或 赋值语句
  * prev_priority 代表上一个符号的优先级
@@ -259,7 +291,7 @@ Ast *parse_prim(void)
  * expr2 := prim cal expr2 | prim
  * cal := + - * / =
  */
-Ast *parse_expr2(int prev_priority)
+static Ast *parse_expr(int prev_priority)
 {
     Ast *ast = parse_prim();
     if (!ast)
@@ -277,28 +309,70 @@ Ast *parse_expr2(int prev_priority)
             unget_token(tok);
             return ast;
         }
-        ast = make_ast_op(tok->punct, ast, parse_expr2(prio));
+        // 如果是赋值语句，确保左子节点的类型是 AST_VAR
+        if(is_punct(tok, '='))
+            ensure_lvalue(ast);
+        ast = make_ast_op(tok->punct, ast, parse_expr(prio));
     }
 }
+
+static int get_ctype(Token *tok) {
+  if (tok->type != TTYPE_IDENT)
+    return -1;
+  if (!strcmp(tok->sval, "int"))
+    return CTYPE_INT;
+  if (!strcmp(tok->sval, "char"))
+    return CTYPE_CHAR;
+  if (!strcmp(tok->sval, "string"))
+    return CTYPE_STR;
+  return -1;
+}
+
+static bool is_type_keyword(Token *tok) {
+  return get_ctype(tok) != -1;
+}
+static void expect(char punct) {
+  Token *tok = read_token();
+  if (!is_punct(tok, punct))
+    error("'%c' expected, but got %s", punct, token_to_string(tok));
+}
+
 /**
- * 完整表达式，以分号【;】结束
- * expr := expr2 ;
+ * 声明
+ * decl := ctype identifer = init_value
+ * 其实 声明 本质上来讲还是赋值操作，只不过要考虑类型
  */
-Ast *parse_expr(void)
-{
-    // 初始化优先级为 0
-    Ast *ast = parse_expr2(0);
-    if (!ast)
-        return NULL;
+static Ast *parse_decl(){
     Token *tok = read_token();
-    if(!is_punct(tok, ';'))
-        error("Unterminated expression");
+    int ctype = get_ctype(tok);
+    Token *tok_name = read_token();
+    if(!tok_name)
+        error("Unexpected terminated..");
+    if(tok_name->type != TTYPE_IDENT)
+        error("Identifier expected, but got %s", token_to_string(tok_name));
+    Ast *var = make_ast_var(ctype, tok_name->sval);
+    expect('=');
+    Ast *init = parse_expr(0);
+    return make_ast_decl(var, init);
+}
+
+/**
+ * decl or stmt
+ * 目前来讲，stmt就是表达式
+ */
+static Ast *parse_decl_or_stmt(){
+    // 仅作比较，不将token从缓冲区删除
+    Token *tok = peek_token();
+    if(!tok) return NULL;
+    Ast *ast = is_type_keyword(tok)? parse_decl(): parse_expr(0);
+    expect(';');
     return ast;
 }
 
+
 // ===================== emit ====================
 
-void print_quote(char *p)
+static void print_quote(char *p)
 {
     while (*p)
     {
@@ -309,7 +383,7 @@ void print_quote(char *p)
     }
 }
 
-void emit_data_section()
+static void emit_data_section()
 {
     if (!strings)
         return;
@@ -324,17 +398,22 @@ void emit_data_section()
     }
 }
 
-void emit_binop(Ast *ast)
+static void emit_assign(Ast *var, Ast *value){
+    emit_expr(value);
+    // 如果赋值号左边不是 变量，则抛出异常
+    if (var->type != AST_VAR)
+        error("Symbol expected");
+    // 假设类型占用 8字节
+    // TODO 考虑变量类型
+    printf("mov %%rax, -%d(%%rbp)\n\t", var->vpos * 8);
+}
+
+static void emit_binop(Ast *ast)
 {
     // 如果是赋值语句
     if (ast->type == '=')
     {
-        emit_expr(ast->right);
-        // 如果赋值号左边不是 变量，则抛出异常
-        if (ast->left->type != AST_VAR)
-            error("Symbol expected");
-        // 假设类型占用 8字节
-        printf("mov %%rax, -%d(%%rbp)\n\t", ast->left->vpos * 8);
+        emit_assign(ast->left, ast->right);
         return;
     }
     // 如果是计算表达式
@@ -372,22 +451,8 @@ void emit_binop(Ast *ast)
     }
 }
 
-void ensure_intexpr(Ast *ast)
-{
-    switch (ast->type)
-    {
-    case '+':
-    case '-':
-    case '*':
-    case '/':
-    case AST_INT:
-        return;
-    default:
-        error("integer or binary operator expected");
-    }
-}
 
-void emit_expr(Ast *ast)
+static void emit_expr(Ast *ast)
 {
     switch (ast->type)
     {
@@ -395,6 +460,7 @@ void emit_expr(Ast *ast)
         printf("mov $%d, %%rax\n\t", ast->ival);
         break;
     case AST_VAR:
+        // TODO 考虑变量类型
         printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
         break;
     case AST_CHAR:
@@ -425,13 +491,27 @@ void emit_expr(Ast *ast)
             printf("pop %%%s\n\t", REGS[i]);
         }
         break;
+    case AST_DECL:
+        emit_assign(ast->decl_var, ast->decl_init);
+        break;
     default:
         // 其他情况， 解析二元运算树
         emit_binop(ast);
     }
 }
 
-void print_ast(Ast *ast)
+static char *ctype_to_string(int ctype) {
+  switch (ctype) {
+    case CTYPE_VOID: return "void";
+    case CTYPE_INT:  return "int";
+    case CTYPE_CHAR: return "char";
+    case CTYPE_STR:  return "string";
+    default: error("Unknown ctype: %d", ctype);
+  }
+}
+
+
+static void print_ast(Ast *ast)
 {
     switch (ast->type)
     {
@@ -459,6 +539,13 @@ void print_ast(Ast *ast)
         }
         printf(")");
         break;
+    case AST_DECL:
+             printf("(decl %s %s ",
+             ctype_to_string(ast->decl_var->ctype),
+             ast->decl_var->vname);
+      print_ast(ast->decl_init);
+      printf(")");
+        break;
     default:
         printf("(%c ", ast->type);
         print_ast(ast->left);
@@ -475,7 +562,7 @@ int main(int argc, char **argv)
     int i;
     for (i = 0; i < EXPR_LEN; i++)
     {
-        Ast *ast = parse_expr();
+        Ast *ast = parse_decl_or_stmt();
         if (!ast)
             break;
         exprs[i] = ast;

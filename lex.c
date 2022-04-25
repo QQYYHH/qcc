@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-04-25 14:24:05
+ * @LastEditTime: 2022-04-25 16:21:56
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -57,16 +57,16 @@ static Token *make_char(char c)
     return r;
 }
 
-static void skip_space(void)
+static int getc_nonspace(void)
 {
     int c;
     while ((c = getc(stdin)) != EOF)
     {
-        if (isspace(c))
+        if (isspace(c) || c == '\n' || c == '\r')
             continue;
-        ungetc(c, stdin);
-        return;
+        return c;
     }
+    return EOF;
 }
 
 /**
@@ -139,6 +139,7 @@ static Token *read_string(void)
 
 /**
  * 标识符，首位必须是字母或下划线，后面可以是字母、数字、下划线
+ * example: int a = 1; int 和 a 都可以算作标识符
  * identifer := alpha | _ | identifer alnum | identifer _
  */
 static Token *read_ident(char c)
@@ -165,8 +166,7 @@ static Token *read_ident(char c)
  */
 static Token *read_token_dispatcher(void)
 {
-    skip_space();
-    int c = getc(stdin);
+    int c = getc_nonspace();
     switch (c)
     {
     case '0':
@@ -302,8 +302,9 @@ void unget_token(Token *tok)
     ungotten = tok;
 }
 
+
 /**
- * 相当于 main 函数
+ * 从缓冲区中读取下一个token
  */
 Token *read_token(void)
 {
@@ -316,4 +317,11 @@ Token *read_token(void)
     }
     // 缓冲区无Token，则通过全局调度器读取
     return read_token_dispatcher();
+}
+
+// 只是比较当前token，并不从缓冲区中删除
+Token *peek_token(){
+    Token *tok = read_token();
+    unget_token(tok);
+    return tok;
 }

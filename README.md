@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-04-22 13:59:51
+ * @LastEditTime: 2022-04-25 17:29:00
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -18,8 +18,12 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - 变量赋值语句
 - add function call
 - add char
+- split qcc.c to main.c lexer.c and string.c
+- add declaration
 
 ## TODO
 - [x] reintroduce string
 - [x] add char
-- [ ] abstract part of code as lexer
+- [x] abstract part of code as lexer
+- [x] add declaration
+- [ ] add type checking

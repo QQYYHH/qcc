@@ -1,20 +1,19 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-22 13:47:03
+ * @LastEditTime: 2022-04-25 15:05:12
  * @LastEditors: QQYYHH
  * @Description: 主函数
- * @FilePath: /pwn/qcc/qcc.c
+ * @FilePath: /pwn/qcc/main.c
  * welcome to my github: https://github.com/QQYYHH
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <stdarg.h>
 #include <string.h>
+#include "qcc.h"
 
-#define BUFLEN 256
 #define MAX_ARGS 6
 // 最大表达式的数量
 #define EXPR_LEN 100
@@ -44,7 +43,7 @@ typedef struct Ast
         struct
         {
             char *sval;
-            // 字符串在程序中保存的位置
+            // 字符串在数据段保存的位置
             int sid;
             struct Ast *snext;
         };
@@ -76,7 +75,6 @@ Ast *strings = NULL;
 // x64下函数前6个实参会依次放入下列寄存器
 char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 
-void error(char *fmt, ...) __attribute__((noreturen));
 void emit_expr(Ast *ast);
 void emit_binop(Ast *ast);
 // 必要的递归下降语法分析函数的定义
@@ -178,110 +176,7 @@ int priority(char op)
     }
 }
 
-void skip_space(void)
-{
-    int c;
-    while ((c = getc(stdin)) != EOF)
-    {
-        if (isspace(c))
-            continue;
-        // 如果不是空白字符，把字符重新放回到输入流
-        ungetc(c, stdin);
-        break;
-    }
-}
-
 // ===================== parse ====================
-/**
- * 常数
- * number := digit
- */
-Ast *parse_number(int n)
-{
-    for (;;)
-    {
-        int c = getc(stdin);
-        if (!isdigit(c))
-        {
-            ungetc(c, stdin);
-            return make_ast_int(n);
-        }
-        n = n * 10 + (c - '0');
-    }
-}
-
-/**
- * 单字符
- */ 
-Ast *parse_char(){
-    char c = getc(stdin);
-    if(c == EOF) goto err;
-    if(c == '\\'){
-        c = getc(stdin);
-        if(c == EOF) goto err;
-    }
-    char c2 = getc(stdin);
-    if(c2 != '\'') error("Malformed char constant");
-    return make_ast_char(c);
-err:
-    error("Unterminated char");
-}
-
-/**
- * 字符串常量
- * string := "xxx"
- */ 
-Ast *parse_string(void)
-{
-    char *buf = malloc(BUFLEN);
-    int i = 0;
-    for (;;)
-    {
-        int c = getc(stdin);
-        if (c == EOF)
-            error("Unterminated string");
-        if (c == '"')
-            break;
-        // 转义字符
-        if (c == '\\')
-        {
-            c = getc(stdin);
-            if (c == EOF)
-                error("Unterminated \\");
-        }
-        buf[i++] = c;
-        if (i == BUFLEN - 1)
-            error("String too long");
-    }
-    buf[i] = '\0';
-    return make_ast_str(buf);
-}
-
-/**
- * 标识符
- * identifier := alnum
- */
-char *parse_ident(char c)
-{
-    char *buf = malloc(BUFLEN);
-    buf[0] = c;
-    int i = 1;
-    for (;;)
-    {
-        c = getc(stdin);
-        // alnum: alpha + number
-        if (!isalnum(c))
-        {
-            ungetc(c, stdin);
-            break;
-        }
-        buf[i++] = c;
-        if (i == BUFLEN - 1)
-            error("Identifier too long");
-    }
-    buf[i] = '\0';
-    return buf;
-}
 
 /**
  * 函数参数
@@ -295,26 +190,22 @@ Ast *parse_func_args(char *fname)
     {
         if (i == MAX_ARGS)
             error("Too many arguments: %s", fname);
-        skip_space();
-        int c = getc(stdin);
-        if (c == ')')
-            break;
-        ungetc(c, stdin);
+        Token *tok = read_token();
+        if(is_punct(tok, ')')) break;
+        unget_token(tok);
         args[i] = parse_expr2(0);
         nargs++;
-        c = getc(stdin);
-        if (c == ')')
-            break;
-        if (c == ',')
+        tok = read_token();
+        if(is_punct(tok, ')')) break;
+        if (is_punct(tok, ','))
         {
-            skip_space();
-            int c2 = getc(stdin);
-            if (c2 == ')')
+            tok = read_token();
+            if (is_punct(tok, ')'))
                 error("Can not find next arg");
-            ungetc(c2, stdin);
+            unget_token(tok);
         }
         else
-            error("Unexpected character: '%c'", c);
+            error("Unexpected token: '%s'", token_to_string(tok));
     }
     return make_ast_funcall(fname, nargs, args);
 }
@@ -324,40 +215,40 @@ Ast *parse_func_args(char *fname)
  * ident_or_func := identifier | function
  * function := identifer ( func_args )
  */
-Ast *parse_ident_or_func(char c)
+Ast *parse_ident_or_func(char *name)
 {
-    char *name = parse_ident(c);
-    skip_space();
-    int c2 = getc(stdin);
+    Token *tok = read_token();
     // funcall
-    if (c2 == '(')
+    if (is_punct(tok, '('))
         return parse_func_args(name);
     // identifier
-    ungetc(c2, stdin);
+    unget_token(tok);
     Ast *v = find_var(name);
     return v? v: make_ast_var(name);
 }
 
 /**
  * 基本单元，可以是整数常量、单字符、字符串常量、标识符 或者为空
- * prim := number | char | string | variable | NULL
+ * prim := number | char | string | variable | funcall | NULL
  */
 Ast *parse_prim(void)
 {
-    int c = getc(stdin);
-    if (isdigit(c))
-        return parse_number(c - '0');
-
-    if (c == '"')
-        return parse_string();
-    if (c == '\'')
-        return parse_char();
-    if (isalpha(c))
-        return parse_ident_or_func(c);
-
-    if (c == EOF)
-        return NULL;
-    error("Don't know how to handle '%c'", c);
+  Token *tok = read_token();
+  if (!tok) return NULL;
+  switch (tok->type) {
+    case TTYPE_IDENT:
+      return parse_ident_or_func(tok->sval);
+    case TTYPE_INT:
+      return make_ast_int(tok->ival);
+    case TTYPE_CHAR:
+      return make_ast_char(tok->c);
+    case TTYPE_STRING:
+      return make_ast_str(tok->sval);
+    case TTYPE_PUNCT:
+      error("unexpected character: '%c'", tok->punct);
+    default:
+      error("internal error: unknown token type: %d", tok->type);
+  }
 }
 
 /**
@@ -370,23 +261,23 @@ Ast *parse_prim(void)
  */
 Ast *parse_expr2(int prev_priority)
 {
-    skip_space();
     Ast *ast = parse_prim();
     if (!ast)
         return NULL;
     for (;;)
     {
-        skip_space();
-        int c = getc(stdin);
-        if (c == EOF)
+        Token *tok = read_token();
+        if (tok == NULL)
             return ast;
-        int prio = priority(c);
+        // 这里存在一些问题，应该判断tok->punct是否为4则运算符号
+        // 后面emit的时候可以检查是否是 运算符
+        int prio = priority(tok->punct);
         if (prio <= prev_priority)
         {
-            ungetc(c, stdin);
+            unget_token(tok);
             return ast;
         }
-        ast = make_ast_op(c, ast, parse_expr2(prio));
+        ast = make_ast_op(tok->punct, ast, parse_expr2(prio));
     }
 }
 /**
@@ -399,9 +290,8 @@ Ast *parse_expr(void)
     Ast *ast = parse_expr2(0);
     if (!ast)
         return NULL;
-    skip_space();
-    int c = getc(stdin);
-    if (c != ';')
+    Token *tok = read_token();
+    if(!is_punct(tok, ';'))
         error("Unterminated expression");
     return ast;
 }

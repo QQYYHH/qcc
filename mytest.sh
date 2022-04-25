@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-04-22 13:57:30
+ # @LastEditTime: 2022-04-25 15:18:20
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -52,8 +52,9 @@ s='a=1 ; b = a * 2 + 2 / 3 ; c=2 * a+b;c * 2 + 5 / 2;' # 10
 # s="a = 1; b = a + 1; c = b + 1; d = c + 1; e = d + 1; f = e  +1; sum6(a,b,c,d,e,f);" # 21
 # s="sum2(1, 2,);"
 # s="sub2(1, 2);"
-s='printf("abc\"");3;'
-s="printf(\"the character is: %c\", 'a' + 1);2;"
+# s='printf("abc\"");3;'
+# s="printf(\"the character is: %c\", 'a' + 1);2;"
 # s=" 'a2' ;"
+s="a = \"hello_worldxxxxxxxx %c xxxxx\"; printf(a, 'b');"
 echo "$s" | ./qcc
 compile "$s"

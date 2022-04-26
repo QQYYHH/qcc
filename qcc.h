@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-04-25 14:56:35
+ * @LastEditTime: 2022-04-26 16:00:46
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -42,7 +42,10 @@ typedef struct
     int len; // 当前长度
 } String;
 
-extern void error(char *fmt, ...) __attribute__((noreturn));
+#define error(...) \
+    errorf(__FILE__, __LINE__, __VA_ARGS__)
+
+extern void errorf(char *file, int line, char *fmt, ...) __attribute__((noreturn));
 
 extern String *make_string(void);
 extern char *get_cstring(String *s);

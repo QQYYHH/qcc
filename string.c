@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-25 14:50:25
- * @LastEditTime: 2022-04-25 14:59:07
+ * @LastEditTime: 2022-04-26 14:40:31
  * @LastEditors: QQYYHH
  * @Description: 实现类似vector的String类
  * @FilePath: /pwn/qcc/string.c
@@ -36,7 +36,7 @@ char *get_cstring(String *s){
 }
 
 void string_append(String *s, char c) {
-  if (s->nalloc == (s->len + 1))
+  if (s->nalloc <= (s->len + 1))
     realloc_body(s);
   s->body[s->len++] = c;
   s->body[s->len] = '\0';
@@ -44,15 +44,16 @@ void string_append(String *s, char c) {
 
 void string_appendf(String *s, char *fmt, ...) {
   va_list args;
-  va_start(args, fmt);
   for (;;) {
     int avail = s->nalloc - s->len;
+    va_start(args, fmt);
     int written = vsnprintf(s->body + s->len, avail, fmt, args);
+    va_end(args);
     if (avail <= written) {
       realloc_body(s);
       continue;
     }
-    s->len += written + 1;
+    s->len += written;
     return;
   }
 }

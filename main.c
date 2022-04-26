@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-04-25 17:24:39
+ * @LastEditTime: 2022-04-26 16:03:28
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -10,13 +10,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
 #include "qcc.h"
 
 #define MAX_ARGS 6
 // 最大表达式的数量
 #define EXPR_LEN 100
+
+#define swap(a, b) \
+    {              \
+        typeof(a) tmp = a; a = b; b = tmp; \
+    }
 
 // 增加 AST节点类型的枚举定义
 enum
@@ -41,7 +45,8 @@ enum {
 typedef struct Ast
 {
     int type;
-    char ctype;
+    // 子树代表的C类型，void, int, char, str
+    int ctype;
     // 匿名联合，对应不同AST类型
     union
     {
@@ -64,7 +69,7 @@ typedef struct Ast
             int vpos; 
             struct Ast *vnext;
         };
-        // Binary operation + - * /
+        // Binary operation + - * / =
         struct
         {
             struct Ast *left;
@@ -94,23 +99,19 @@ static char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 static void emit_expr(Ast *ast);
 // 必要的递归下降语法分析函数的定义
 static Ast *parse_expr(int prev_priority);
+static char *ast_to_string(Ast *ast);
 
-void error(char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    fprintf(stderr, "\n");
-    va_end(args);
-    exit(1);
-}
 
 // ===================== make AST ====================
 
-static Ast *make_ast_op(int type, Ast *left, Ast *right)
+/**
+ * 二元操作树，表达式抽象语法树
+ */
+static Ast *make_ast_op(int type, int ctype, Ast *left, Ast *right)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = type;
+    r->ctype = ctype;
     r->left = left;
     r->right = right;
     return r;
@@ -119,6 +120,7 @@ static Ast *make_ast_op(int type, Ast *left, Ast *right)
 static Ast *make_ast_char(char c){
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_CHAR;
+    r->ctype = CTYPE_CHAR;
     r->c = c;
     return r;
 }
@@ -127,6 +129,7 @@ static Ast *make_ast_int(int val)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_INT;
+    r->ctype = CTYPE_INT;
     r->ival = val;
     return r;
 }
@@ -135,6 +138,7 @@ static Ast *make_ast_str(char *str)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_STR;
+    r->ctype = CTYPE_STR;
     r->sval = str;
     r->snext = strings;
     r->sid = strings? strings->sid + 1: 0;
@@ -168,10 +172,16 @@ static Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_FUNCALL;
+    // 默认函数返回类型为 int
+    r->ctype = CTYPE_INT;
     r->fname = fname;
     r->nargs = nargs;
     r->args = args;
     return r;
+}
+
+static bool is_right_assoc(char op){
+    return op == '=';
 }
 
 static Ast *make_ast_decl(Ast *var, Ast *init){
@@ -200,6 +210,60 @@ static int priority(char op)
 }
 
 // ===================== parse ====================
+
+
+/**
+ * 类型检查，推断当前二元表达式树的类型
+ * 根据左右子树的类型推断
+ */
+static char result_type(char op, Ast *a, Ast *b)
+{
+    int swapped = false;
+    if (a->ctype > b->ctype)
+    {
+        swap(a, b);
+        swapped = true;
+    }
+    switch (a->ctype)
+    {
+    /* void不能和任何类型发生运算 */
+    case CTYPE_VOID:
+        goto err;
+    /* int op [int, char] -> int */
+    /* int op str -> error */
+    case CTYPE_INT:
+        switch (b->ctype)
+        {
+        case CTYPE_INT:
+        case CTYPE_CHAR:
+            return CTYPE_INT;
+        case CTYPE_STR:
+            goto err;
+        }
+        error("internal error");
+    /* char op char -> int */
+    /* char op str -> error */
+    case CTYPE_CHAR:
+        switch (b->ctype)
+        {
+        case CTYPE_CHAR:
+            return CTYPE_INT;
+        case CTYPE_STR:
+            goto err;
+        }
+        error("internal error");
+    /* str 不能和任何类型发生运算 */
+    case CTYPE_STR:
+        goto err;
+    default:
+        error("internal error");
+    }
+err:
+    if (swapped)
+        swap(a, b);
+    error("incompatible operands: %s and %s for %c",
+          ast_to_string(a), ast_to_string(b), op);
+}
 
 /**
  * 函数参数
@@ -247,7 +311,7 @@ static Ast *parse_ident_or_func(char *name)
     // identifier
     unget_token(tok);
     Ast *v = find_var(name);
-    // must definition before using. 
+    // must declaration before using. 
     if(!v)
         error("Undefined varaible: %s", name);
     return v;
@@ -302,17 +366,22 @@ static Ast *parse_expr(int prev_priority)
         if (tok == NULL)
             return ast;
         // 这里存在一些问题，应该判断tok->punct是否为4则运算符号
-        // 后面emit的时候可以检查是否是 运算符
+        // 后面emit的时候检查是否为 运算符
         int prio = priority(tok->punct);
-        if (prio <= prev_priority)
+        /* 赋值语句中 = 的优先级比较特殊，相同符号前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面 */
+        /* 因此 优先级相等的这种情况要单独拿出来讨论 */
+        int is_equal = is_punct(tok, '=');
+        if (prio <= prev_priority && !is_equal)
         {
             unget_token(tok);
             return ast;
         }
         // 如果是赋值语句，确保左子节点的类型是 AST_VAR
-        if(is_punct(tok, '='))
+        if(is_equal)
             ensure_lvalue(ast);
-        ast = make_ast_op(tok->punct, ast, parse_expr(prio));
+        Ast *right = parse_expr(prio);
+        char ctype = result_type(tok->punct, ast, right);
+        ast = make_ast_op(tok->punct, ctype, ast, right);
     }
 }
 
@@ -341,6 +410,7 @@ static void expect(char punct) {
  * 声明
  * decl := ctype identifer = init_value
  * 其实 声明 本质上来讲还是赋值操作，只不过要考虑类型
+ * TODO 逗号分隔变量的声明 比如 int a = 1, b = 2;
  */
 static Ast *parse_decl(){
     Token *tok = read_token();
@@ -372,15 +442,17 @@ static Ast *parse_decl_or_stmt(){
 
 // ===================== emit ====================
 
-static void print_quote(char *p)
+static char *quote(char *p)
 {
+    String *s = make_string();
     while (*p)
     {
         if (*p == '\"' || *p == '\\')
-            printf("\\");
-        printf("%c", *p);
+            string_append(s, '\\');
+        string_append(s, *p);
         p++;
     }
+    return get_cstring(s);
 }
 
 static void emit_data_section()
@@ -391,10 +463,7 @@ static void emit_data_section()
     for (Ast *p = strings; p; p = p->snext)
     {
         printf(".s%d:\n\t", p->sid);
-        printf(".string \"");
-        // printf("%s", p->sval);
-        print_quote(p->sval);
-        printf("\"\n");
+        printf(".string \"%s\"\n", quote(p->sval));
     }
 }
 
@@ -510,49 +579,50 @@ static char *ctype_to_string(int ctype) {
   }
 }
 
-
-static void print_ast(Ast *ast)
+static void ast_to_string_int(Ast *ast, String *buf)
 {
+    char *left, *right;
     switch (ast->type)
     {
     case AST_INT:
-        printf("%d", ast->ival);
+        string_appendf(buf, "%d", ast->ival);
         break;
     case AST_CHAR:
-        printf("%c", ast->c);
+        string_appendf(buf, "'%c'", ast->c);
         break;
     case AST_STR:
-        printf("\"");
-        print_quote(ast->sval);
-        printf("\"");
+        string_appendf(buf, "\"%s\"", quote(ast->sval));
         break;
     case AST_VAR:
-        printf("%s", ast->vname);
+        string_appendf(buf, "%s", ast->vname);
         break;
     case AST_FUNCALL:
-        printf("%s(", ast->fname);
-        for (int i = 0; ast->args[i]; i++)
+        string_appendf(buf, "%s(", ast->fname);
+        for (int i = 0; i < ast->nargs; i++)
         {
-            print_ast(ast->args[i]);
-            if (ast->args[i + 1])
-                printf(",");
+            string_appendf(buf, "%s", ast_to_string(ast->args[i]));
+            if (i < ast->nargs - 1)
+                string_appendf(buf, ",");
         }
-        printf(")");
+        string_appendf(buf, ")");
         break;
     case AST_DECL:
-             printf("(decl %s %s ",
-             ctype_to_string(ast->decl_var->ctype),
-             ast->decl_var->vname);
-      print_ast(ast->decl_init);
-      printf(")");
+        string_appendf(buf, "(decl %s %s %s)",
+                       ctype_to_string(ast->decl_var->ctype),
+                       ast->decl_var->vname,
+                       ast_to_string(ast->decl_init));
         break;
     default:
-        printf("(%c ", ast->type);
-        print_ast(ast->left);
-        printf(" ");
-        print_ast(ast->right);
-        printf(")");
+        left = ast_to_string(ast->left);
+        right = ast_to_string(ast->right);
+        string_appendf(buf, "(%c %s %s)", ast->type, left, right);
     }
+}
+
+static char *ast_to_string(Ast *ast){
+    String *s = make_string();
+    ast_to_string_int(ast, s);
+    return get_cstring(s);
 }
 
 int main(int argc, char **argv)
@@ -582,7 +652,7 @@ int main(int argc, char **argv)
     for (i = 0; i < nexpr; i++)
     {
         if (want_ast_tree)
-            print_ast(exprs[i]);
+            printf("%s", ast_to_string(exprs[i]));
         else
             emit_expr(exprs[i]);
     }

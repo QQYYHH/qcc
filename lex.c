@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-04-25 16:21:56
+ * @LastEditTime: 2022-05-03 14:19:24
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -247,6 +247,7 @@ static Token *read_token_dispatcher(void)
     case ')':
     case ',':
     case ';':
+    case '&':
         return make_punct(c);
     case EOF:
         return NULL;

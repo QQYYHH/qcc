@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-04-26 16:13:04
+ # @LastEditTime: 2022-05-03 20:27:36
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -79,12 +79,29 @@ testast '"abc"' '"abc";'
 testast "'c'" "'c';"
 testast 'a()' 'a();'
 testast 'a(1,2,3,4,5,6)' 'a(1,2,3,4,5,6);'
+# pointer * & 
+testast '(decl int a 3)(& a)' 'int a=3;&a;'
+testast '(decl int a 3)(* (& a))' 'int a=3;*&a;'
+testast '(decl int a 3)(decl int* b (& a))(* b)' 'int a=3;int *b=&a;*b;'
 
 # Expression
+# Basic arithmetic
 test 5 "1+2 * 3 - 4 / 2;"
+test 0 '0;'
+test 3 '1+2;'
+test 3 '1 + 2;'
+test 10 '1+2+3+4;'
+test 11 '1+2*3+4;'
+test 14 '1*2+3*4;'
+test 4 '4/2+6/3;'
+test 3 '24/2/4;'
+test 98 "'a'+1;"
+test 2 '1;2;'
+# Declaration
 test 1 "int a = 1;"
 test 3 "int a = 1; int b = a + 2;"
 test 10 'int a = 1 ; int  b = a * 2 + 2 / 3 ; int c=2 * a+b;c * 2 + 5 / 2;'
+# Function Call
 test 21 "int a = 1; int b = a + 1; int c = b + 1; int d = c + 1; int e = d + 1; int f = e  +1; sum6(a,b,c,d,e,f);"
 testfail "sum2(1, 2,);"
 test -1 "sub2(1, 2);"
@@ -92,10 +109,20 @@ test "abc\"3" 'printf("abc\"");3;'
 test "the character is: b2" "printf(\"the character is: %c\", 'a' + 1);2;"
 test "hello_worldxxxxxxxx b xxxxx3" "int a = \"hello_worldxxxxxxxx %c xxxxx\"; printf(a, 'b');3;"
 
+# Pointer
+test 61 'int a=61;int *b=&a;*b;'
+test 2 "int a =2; int *b = &a; int **c = &b; **c;"
+test 23 "int a = 2; int *b = &a; int **c = &b; printf(\"%d\", **c);3;"
+
 # Incompatible type
 testfail '"a"+1;'
+# & is only applicable when operand is variable
+testfail '&"a";'
+testfail '&1;'
+testfail '&a();'
+testfail '&&a;'
 
 echo "All tests passed"
-# s="int a = 1; int b = a + 2;"
+# s="int a =2; int *b = &a; int **c = &b; **c;"
 # echo "$s" | ./qcc
 # compile "$s"

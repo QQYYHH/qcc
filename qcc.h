@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-04-26 16:00:46
+ * @LastEditTime: 2022-05-03 14:15:32
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -44,6 +44,13 @@ typedef struct
 
 #define error(...) \
     errorf(__FILE__, __LINE__, __VA_ARGS__)
+
+#define assert(expr)                           \
+    do                                         \
+    {                                          \
+        if (!(expr))                           \
+            error("Assertion failed: " #expr); \
+    } while (0)
 
 extern void errorf(char *file, int line, char *fmt, ...) __attribute__((noreturn));
 

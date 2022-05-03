@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-04-26 16:15:23
+ * @LastEditTime: 2022-05-03 20:29:56
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -12,23 +12,18 @@
 参考 8cc
 https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d4883172b21438a8597+766&branch=master<br>
 
-## Done
-完善表达式：
-- 加减乘除混合运算
-- 变量赋值语句
-- add function call
-- add char
-- split qcc.c to main.c lexer.c and string.c
-- add declaration
-- add type checking 
 
 ## TODO
-- [x] reintroduce string
+- [x] 加减乘除混合运算
+- [x] 变量赋值语句
+- [x] add function call
 - [x] add char
 - [x] abstract part of code as lexer
 - [x] add declaration
 - [x] add type checking
-- [ ] add pointer
+- [x] add pointer, unary operator
+- [ ] add array
+- [ ] distinguish global/local vars
 
 ## bug fix
-- 赋值语句中 `=` 的优先级比较特殊，相同符号前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面
+- 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面

@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-05-03 20:27:36
+ # @LastEditTime: 2022-05-03 21:10:54
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -123,6 +123,6 @@ testfail '&a();'
 testfail '&&a;'
 
 echo "All tests passed"
-# s="int a =2; int *b = &a; int **c = &b; **c;"
+# s="int a =2; int *b = &a; *b = 3;*b"
 # echo "$s" | ./qcc
 # compile "$s"

@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-05-03 20:29:56
+ * @LastEditTime: 2022-05-03 21:14:37
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -24,6 +24,9 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] add pointer, unary operator
 - [ ] add array
 - [ ] distinguish global/local vars
+
+## issue
+- "int a =2; int \*b = &a; \*b = 3; \*b"，暂时无法对\*b这种 通过指针访问的内存区域赋值
 
 ## bug fix
 - 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面

@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-05-03 21:14:37
+ * @LastEditTime: 2022-05-06 00:52:01
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -22,6 +22,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] add declaration
 - [x] add type checking
 - [x] add pointer, unary operator
+- [x] pointer arithmetic
 - [ ] add array
 - [ ] distinguish global/local vars
 

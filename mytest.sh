@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-05-03 21:10:54
+ # @LastEditTime: 2022-05-06 00:49:53
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -113,9 +113,15 @@ test "hello_worldxxxxxxxx b xxxxx3" "int a = \"hello_worldxxxxxxxx %c xxxxx\"; p
 test 61 'int a=61;int *b=&a;*b;'
 test 2 "int a =2; int *b = &a; int **c = &b; **c;"
 test 23 "int a = 2; int *b = &a; int **c = &b; printf(\"%d\", **c);3;"
+test 97 'char *c="ab";*c;'
+test 98 'char *c="ab"+1;*c;'
+test 'pointer difference is: 1777' 'int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
+
+# Type Cast
+test 0 'char a = 256;a;'
 
 # Incompatible type
-testfail '"a"+1;'
+# testfail '"a"+1;'
 # & is only applicable when operand is variable
 testfail '&"a";'
 testfail '&1;'
@@ -123,6 +129,7 @@ testfail '&a();'
 testfail '&&a;'
 
 echo "All tests passed"
-# s="int a =2; int *b = &a; *b = 3;*b"
-# echo "$s" | ./qcc
+# s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer b is %p and pointer c is %p", b, c);'
+# s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
+# echo "$s" | ./qcc 
 # compile "$s"

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-05-03 20:07:55
+ * @LastEditTime: 2022-05-06 00:55:10
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -42,8 +42,8 @@ enum
     CTYPE_VOID,
     CTYPE_INT,
     CTYPE_CHAR,
-    CTYPE_STR,
-    CTYPE_PTR, // 指针类型
+    CTYPE_ARRAY, // 数组类型
+    CTYPE_PTR,   // 指针类型
 };
 
 typedef struct Ctype
@@ -60,7 +60,7 @@ typedef struct Ctype
 typedef struct Ast
 {
     int type;
-    // 子树代表的C类型
+    // 抽象语法树的C类型
     Ctype *ctype;
     // 匿名联合，对应不同AST类型
     union
@@ -122,7 +122,11 @@ static char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
 
 static Ctype *ctype_int = &(Ctype){CTYPE_INT, NULL};
 static Ctype *ctype_char = &(Ctype){CTYPE_CHAR, NULL};
-static Ctype *ctype_str = &(Ctype){CTYPE_STR, NULL};
+// 数组本质是一种指针类型，指向基本单元char类型
+// 不论是什么类型的数组，基本单元都可以是char类型，比如一个int元素相当于4个char类型的元素
+static Ctype *ctype_array = &(Ctype){CTYPE_ARRAY, &(Ctype){CTYPE_CHAR, NULL}};
+
+static char *ctype_to_string(Ctype *ctype);
 
 static void emit_expr(Ast *ast);
 // 必要的递归下降语法分析函数的定义
@@ -179,7 +183,7 @@ static Ast *make_ast_str(char *str)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_LITERAL;
-    r->ctype = ctype_str;
+    r->ctype = ctype_array;
     r->sval = str;
     r->snext = strings;
     r->sid = strings ? strings->sid + 1 : 0;
@@ -268,55 +272,44 @@ static int priority(char op)
  * 类型检查，推断当前二元表达式树的类型
  * 根据左右子树的类型推断
  */
-static Ctype *result_type_int(jmp_buf *jmpbuf, Ctype *a, Ctype *b)
+static Ctype *result_type_int(jmp_buf *jmpbuf, char op, Ctype *a, Ctype *b)
 {
-    /**
-     * 如果是指针，则参与运算的两个子树的类型都必须是指针【暂时这么规定】
-     * 进而继续检查指针所指向变量的类型是否合规
-     */
-    if (a->type == CTYPE_PTR)
-    {
-        if (b->type != CTYPE_PTR)
-            goto err;
-        Ctype *r = malloc(sizeof(Ctype));
-        r->type = CTYPE_PTR;
-        r->ptr = result_type_int(jmpbuf, a->ptr, b->ptr);
-        return r;
-    }
     if (a->type > b->type)
         swap(a, b);
+    /**
+     * 如果是指针
+     */
+    if (b->type == CTYPE_PTR)
+    {
+        /* 指针与其他类型的数据只能做 + - */
+        if (op != '+' && op != '-')
+            goto err;
+        if (a->type != CTYPE_PTR)
+        {
+            // fprintf(stderr, "warning: Making a pointer from %s\n", ctype_to_string(a));
+            warn("Making a pointer from %s\n", ctype_to_string(a));
+            return b;
+        }
+        /* 二者都是指针的情况，递归下去看指向的变量类型 */
+        Ctype *r = malloc(sizeof(Ctype));
+        r->type = CTYPE_PTR;
+        r->ptr = result_type_int(jmpbuf, op, a->ptr, b->ptr);
+        return r;
+    }
 
     switch (a->type)
     {
     /* void不能和任何类型发生运算 */
     case CTYPE_VOID:
         goto err;
-    /* int op [int, char] -> int */
-    /* int op str -> error */
     case CTYPE_INT:
-        switch (b->type)
-        {
-        case CTYPE_INT:
-        case CTYPE_CHAR:
-            return ctype_int;
-        case CTYPE_STR:
-            goto err;
-        }
-        error("internal error");
-    /* char op char -> int */
-    /* char op str -> error */
     case CTYPE_CHAR:
-        switch (b->type)
-        {
-        case CTYPE_CHAR:
-            return ctype_int;
-        case CTYPE_STR:
-            goto err;
-        }
-        error("internal error");
-    /* str 不能和任何类型发生运算 */
-    case CTYPE_STR:
-        goto err;
+        return ctype_int;
+    /* array 本质上是指针类型，因此将其转换为指针类型之后递归判断即可 */
+    /* array op array */
+    /* array op ptr */
+    case CTYPE_ARRAY:
+        return result_type_int(jmpbuf, op, make_ptr_type(a->ptr), b);
     default:
         error("internal error");
     }
@@ -328,7 +321,7 @@ static Ctype *result_type(char op, Ast *a, Ast *b)
 {
     jmp_buf jmpbuf;
     if (setjmp(jmpbuf) == 0)
-        return result_type_int(&jmpbuf, a->ctype, b->ctype);
+        return result_type_int(&jmpbuf, op, a->ctype, b->ctype);
     error("incompatible operands: %c: <%s> and <%s>",
           op, ast_to_string(a), ast_to_string(b));
 }
@@ -482,6 +475,10 @@ static Ast *parse_expr(int prev_priority)
             ensure_lvalue(ast);
         Ast *right = parse_expr(prio);
         Ctype *ctype = result_type(tok->punct, ast, right);
+        // 这里有一个交换操作，将指针类型的子树放在左边，方便后续处理
+        // 这种交换操作并不影响运算的优先级
+        if (ctype->type == CTYPE_PTR && ast->ctype->type != CTYPE_PTR)
+            swap(ast, right);
         ast = make_ast_binop(tok->punct, ctype, ast, right);
     }
 }
@@ -494,8 +491,6 @@ static Ctype *get_ctype(Token *tok)
         return ctype_int;
     if (!strcmp(tok->sval, "char"))
         return ctype_char;
-    if (!strcmp(tok->sval, "string"))
-        return ctype_str;
     return NULL;
 }
 
@@ -557,6 +552,24 @@ static Ast *parse_decl_or_stmt()
 
 // ===================== emit ====================
 
+static int ctype_shift(Ctype *ctype)
+{
+    switch (ctype->type)
+    {
+    case CTYPE_CHAR:
+        return 0; // 1 << 0
+    case CTYPE_INT:
+        return 2; // 1 << 2
+    default:
+        return 3; // 1 << 3
+    }
+}
+// 某个ctype占用的字节数
+static int ctype_size(Ctype *ctype)
+{
+    return 1 << ctype_shift(ctype);
+}
+
 static char *quote(char *p)
 {
     String *s = make_string();
@@ -588,9 +601,66 @@ static void emit_assign(Ast *var, Ast *value)
     // 如果赋值号左边不是 变量，则抛出异常
     if (var->type != AST_VAR)
         error("Symbol expected");
-    // 假设类型占用 8字节
-    // TODO 考虑变量类型
-    printf("mov %%rax, -%d(%%rbp)\n\t", var->vpos * 8);
+    // 考虑变量类型
+    switch (ctype_size(var->ctype))
+    {
+    case 1:
+        printf("mov %%al, -%d(%%rbp)\n\t", var->vpos * 8);
+        break;
+    case 4:
+        printf("mov %%eax, -%d(%%rbp)\n\t", var->vpos * 8);
+        break;
+    case 8:
+        printf("mov %%rax, -%d(%%rbp)\n\t", var->vpos * 8);
+        break;
+    default:
+        error("interal error");
+    }
+    // printf("mov %%rax, -%d(%%rbp)\n\t", var->vpos * 8);
+}
+
+/**
+ * 指针二元运算树 对应的代码产生方式
+ * 因为指针运算需要考虑指针类型，所以特殊一点
+ * 比如int *a; a + 2; 相当于一共偏移 2 * 4 = 8个字节，因为一个int类型是4字节
+ * 指针只会进行 + - 操作
+ */
+static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
+{
+    /* 确保左子树是指针类型 */
+    assert(left->ctype->type == CTYPE_PTR);
+    /* 如果左右子树都是指针类型 */
+    if(right->ctype->type == CTYPE_PTR){
+        /* 确保指针指向的类型一致 */
+        /* 且指针之间只有做减法操作才有意义 */
+        assert(left->ctype->ptr->type == right->ctype->ptr->type);
+        if(op == '+') error("No meaning for ptr plus ptr");
+        emit_expr(left);
+        printf("push %%rax\n\t");
+        emit_expr(right);
+        int sft = ctype_shift(left->ctype->ptr);
+        printf("mov %%rax, %%rbx\n\t"
+           "pop %%rax\n\t"
+           "sub %%rbx, %%rax\n\t"
+           "sar $%d, %%rax\n\t", sft);
+        return ;
+    }
+
+    emit_expr(left);
+    printf("push %%rax\n\t");
+    emit_expr(right);
+    /* 根据指针指向的类型，计算偏移量 */
+    int sft = ctype_shift(left->ctype->ptr);
+    if (sft > 0)
+        /* sal 有符号左移动 */
+        printf("sal $%d, %%rax\n\t", sft);
+    char *s = "add";
+    if (op == '-')
+        s = "sub";
+    printf("mov %%rax, %%rbx\n\t"
+           "pop %%rax\n\t"
+           "%s %%rbx, %%rax\n\t",
+           s);
 }
 
 static void emit_binop(Ast *ast)
@@ -601,6 +671,13 @@ static void emit_binop(Ast *ast)
         emit_assign(ast->left, ast->right);
         return;
     }
+    // 如果二元运算树是指针类型
+    if (ast->ctype->type == CTYPE_PTR)
+    {
+        emit_pointer_arithmetic(ast->type, ast->left, ast->right);
+        return;
+    }
+
     // 如果是计算表达式
     char *op;
     switch (ast->type)
@@ -627,6 +704,8 @@ static void emit_binop(Ast *ast)
     printf("pop %%rax\n\t");
     if (ast->type == '/')
     {
+        /* rdx存放余数 */
+        /* rax存放商 */
         printf("mov $0, %%rdx\n\t");
         printf("idiv %%rbx\n\t");
     }
@@ -641,15 +720,17 @@ static void emit_expr(Ast *ast)
     switch (ast->type)
     {
     case AST_LITERAL:
+        printf("xor %%rax, %%rax\n\t");
         switch (ast->ctype->type)
         {
         case CTYPE_INT:
             printf("mov $%d, %%rax\n\t", ast->ival);
             break;
         case CTYPE_CHAR:
-            printf("mov $%d, %%rax\n\t", ast->c);
+            printf("mov $%d, %%al\n\t", ast->c);
             break;
-        case CTYPE_STR:
+        /* string */
+        case CTYPE_ARRAY:
             // x64特有的rip相对寻址，.s是数据段中字符串的标识符
             // 比如数据段中有.s0, .s1, .s2等，分别代表不同的字符串
             printf("lea .s%d(%%rip), %%rax\n\t", ast->sid);
@@ -659,8 +740,23 @@ static void emit_expr(Ast *ast)
         }
         break;
     case AST_VAR:
-        // TODO 考虑变量类型
-        printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
+        printf("xor %%rax, %%rax\n\t");
+        // 考虑变量类型
+        switch (ctype_size(ast->ctype))
+        {
+        case 1:
+            printf("mov -%d(%%rbp), %%al\n\t", ast->vpos * 8);
+            break;
+        case 4:
+            printf("mov -%d(%%rbp), %%eax\n\t", ast->vpos * 8);
+            break;
+        case 8:
+            printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
+            break;
+        default:
+            error("interal error");
+        }
+        // printf("mov -%d(%%rbp), %%rax\n\t", ast->vpos * 8);
         break;
     case AST_FUNCALL:
         // 调用前 先将参数寄存器压栈，保存执行环境
@@ -696,7 +792,24 @@ static void emit_expr(Ast *ast)
         assert(ast->operand->ctype->type == CTYPE_PTR);
         emit_expr(ast->operand);
         /* 访存，将值赋予rax */
-        printf("mov (%%rax), %%rax\n\t");
+        char *reg;
+        switch (ctype_size(ast->ctype))
+        {
+        case 1:
+            reg = "bl";
+            break;
+        case 4:
+            reg = "ebx";
+            break;
+        case 8:
+            reg = "rbx";
+            break;
+        default:
+            error("interal error");
+        }
+        printf("xor %%rbx, %%rbx\n\t");
+        printf("mov (%%rax), %%%s\n\t", reg);
+        printf("mov %%rbx, %%rax\n\t");
         break;
     default:
         // 其他情况， 解析二元运算树
@@ -715,12 +828,15 @@ static char *ctype_to_string(Ctype *ctype)
         return "int";
     case CTYPE_CHAR:
         return "char";
-    case CTYPE_STR:
-        return "string";
     case CTYPE_PTR:
         s = make_string();
         string_appendf(s, "%s", ctype_to_string(ctype->ptr));
         string_append(s, '*');
+        return get_cstring(s);
+    case CTYPE_ARRAY:
+        s = make_string();
+        string_appendf(s, "%s", ctype_to_string(ctype->ptr));
+        string_appendf(s, "[]");
         return get_cstring(s);
     default:
         error("Unknown ctype: %d", ctype);
@@ -741,7 +857,7 @@ static void ast_to_string_int(Ast *ast, String *buf)
         case CTYPE_CHAR:
             string_appendf(buf, "'%c'", ast->c);
             break;
-        case CTYPE_STR:
+        case CTYPE_ARRAY:
             string_appendf(buf, "\"%s\"", quote(ast->sval));
             break;
         default:

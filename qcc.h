@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-05-03 14:15:32
+ * @LastEditTime: 2022-05-06 00:54:56
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -45,6 +45,9 @@ typedef struct
 #define error(...) \
     errorf(__FILE__, __LINE__, __VA_ARGS__)
 
+#define warn(...) \
+    fprintf(stderr, "warning: " __VA_ARGS__)
+
 #define assert(expr)                           \
     do                                         \
     {                                          \
@@ -53,6 +56,7 @@ typedef struct
     } while (0)
 
 extern void errorf(char *file, int line, char *fmt, ...) __attribute__((noreturn));
+// extern void warn(char *fmt, ...) __attribute__((noreturn));
 
 extern String *make_string(void);
 extern char *get_cstring(String *s);

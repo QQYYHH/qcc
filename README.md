@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-05-09 15:01:07
+ * @LastEditTime: 2022-05-09 16:08:29
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -24,11 +24,14 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] add pointer, unary operator
 - [x] pointer arithmetic
 - [ ] add array
+- [ ] array arithmetic
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
 
 ## issue
 - "int a =2; int \*b = &a; \*b = 3; \*b"，暂时无法对\*b这种 通过指针访问的内存区域赋值
+- a[1] = 1 这种赋值方式暂时还不支持
+- 没有测试 局部变量和全局变量运算及其赋值
 
 ## bug fix
 - 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面

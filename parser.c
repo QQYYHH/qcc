@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-05-09 14:55:58
+ * @LastEditTime: 2022-05-09 16:01:28
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -21,15 +21,15 @@ Ast *globals = NULL;
 Ast *locals = NULL;
 
 // int, char 类型
-Ctype *ctype_int = &(Ctype){ CTYPE_INT, NULL };
-Ctype *ctype_char = &(Ctype){ CTYPE_CHAR, NULL };
+Ctype *ctype_int = &(Ctype){CTYPE_INT, NULL};
+Ctype *ctype_char = &(Ctype){CTYPE_CHAR, NULL};
 
 // 控制全局变量的标签序号
 static int labelseq = 0;
 
 static Ast *parse_expr(int prev_priority);
-static Ctype* make_ptr_type(Ctype *ctype);
-static Ctype* make_array_type(Ctype *ctype, int size);
+static Ctype *make_ptr_type(Ctype *ctype);
+static Ctype *make_array_type(Ctype *ctype, int size);
 
 // ============================ make AST ================================
 
@@ -146,7 +146,8 @@ static Ast *make_ast_gvar(Ctype *ctype, char *name, bool filelocal)
     if (globals)
     {
         Ast *p;
-        for (p = locals; p->next; p = p->next);
+        for (p = locals; p->next; p = p->next)
+            ;
         p->next = r;
     }
     else
@@ -241,7 +242,6 @@ static Ast *find_var(char *name)
     }
     return NULL;
 }
-
 
 static int priority(char op)
 {
@@ -502,7 +502,7 @@ static Ast *parse_expr(int prev_priority)
         Ast *right = parse_expr(prio);
         right = convert_array(right);
         Ctype *ctype = result_type(tok->punct, ast->ctype, right->ctype);
-        
+
         // 这里有一个交换操作，将指针类型的子树放在左边，方便后续处理
         // 这种交换操作并不影响运算的优先级
         // 但会影响 减法 操作，TODO fix
@@ -536,7 +536,7 @@ static void expect(char punct)
 }
 
 /**
- * 数组的初始化数据部分 
+ * 数组的初始化数据部分
  * decl_array_init := "char* array" | { expr, expr, ... }
  * @ctype array_ctype
  */
@@ -634,7 +634,7 @@ static Ast *parse_decl()
 /**
  * decl or stmt
  * 目前来讲，stmt就是表达式
- */ 
+ */
 Ast *parse_decl_or_stmt()
 {
     // 仅作比较，不将token从缓冲区删除
@@ -726,6 +726,16 @@ static void ast_to_string_int(Ast *ast, String *buf)
         break;
     case AST_DEREF:
         string_appendf(buf, "(* %s)", ast_to_string(ast->operand));
+        break;
+    case AST_ARRAY_INIT:
+        string_appendf(buf, "{");
+        for (int i = 0; i < ast->size; i++)
+        {
+            ast_to_string_int(ast->array_init[i], buf);
+            if (i != ast->size - 1)
+                string_appendf(buf, ",");
+        }
+        string_appendf(buf, "}");
         break;
     default:
         left = ast_to_string(ast->left);

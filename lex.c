@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-05-03 14:19:24
+ * @LastEditTime: 2022-05-06 13:53:44
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -90,7 +90,7 @@ static Token *read_number(char c)
 
 /**
  * 单字符
- */ 
+ */
 static Token *read_char(void)
 {
     char c = getc(stdin);
@@ -115,7 +115,7 @@ err:
 /**
  * 字符串常量
  * string := "xxx"
- */ 
+ */
 static Token *read_string(void)
 {
     String *s = make_string();
@@ -248,6 +248,10 @@ static Token *read_token_dispatcher(void)
     case ',':
     case ';':
     case '&':
+    case '[':
+    case ']':
+    case '{':
+    case '}':
         return make_punct(c);
     case EOF:
         return NULL;
@@ -303,7 +307,6 @@ void unget_token(Token *tok)
     ungotten = tok;
 }
 
-
 /**
  * 从缓冲区中读取下一个token
  */
@@ -321,7 +324,8 @@ Token *read_token(void)
 }
 
 // 只是比较当前token，并不从缓冲区中删除
-Token *peek_token(){
+Token *peek_token()
+{
     Token *tok = read_token();
     unget_token(tok);
     return tok;

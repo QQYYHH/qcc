@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-05-06 00:52:01
+ * @LastEditTime: 2022-05-09 15:01:07
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -25,6 +25,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] pointer arithmetic
 - [ ] add array
 - [ ] distinguish global/local vars
+- [x] split main into parser.c and gen.c
 
 ## issue
 - "int a =2; int \*b = &a; \*b = 3; \*b"，暂时无法对\*b这种 通过指针访问的内存区域赋值

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-05-06 00:54:56
+ * @LastEditTime: 2022-05-09 14:54:45
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -12,6 +12,7 @@
 
 #include <stdbool.h>
 
+// ============================ Token ================================
 enum
 {
     TTYPE_IDENT,
@@ -42,6 +43,130 @@ typedef struct
     int len; // 当前长度
 } String;
 
+// ============================ AST ================================
+// 增加 AST节点类型的枚举定义
+enum
+{
+    AST_LITERAL, // 字面量，包括常量、字符
+    AST_STRING,
+    AST_LVAR, // 局部变量、引用
+    AST_LREF,
+    AST_GVAR, // 全局变量、引用
+    AST_GREF,
+    AST_FUNCALL,
+    AST_DECL,       // declaration
+    AST_ARRAY_INIT, // 数组初始化
+    AST_ADDR,       // 代表 & 单目运算
+    AST_DEREF,      // 代表 * 单目运算
+};
+
+// 不同的C类型
+enum
+{
+    CTYPE_VOID,
+    CTYPE_INT,
+    CTYPE_CHAR,
+    CTYPE_ARRAY, // 数组类型
+    CTYPE_PTR,   // 指针类型
+};
+
+typedef struct Ctype
+{
+    int type;
+    /**
+     * 如果是非指针，该字段为NULL
+     * 如果是指针，则为指向的变量类型
+     */
+    struct Ctype *ptr;
+    // 数组中元素的个数
+    int size;
+} Ctype;
+
+// 增加AST节点定义
+typedef struct Ast
+{
+    int type;
+    // 抽象语法树的C类型
+    Ctype *ctype;
+    struct Ast *next;
+    // 匿名联合，对应不同AST类型
+    union
+    {
+        // Integer
+        int ival;
+        // Char
+        char c;
+        // String
+        struct
+        {
+            char *sval;
+            // 字符串在数据段保存的位置
+            char *slabel;
+        };
+        // Local Variable
+        struct
+        {
+            char *lname;
+            // 局部变量相对rbp的偏移
+            int loff;
+        };
+        // Global Variable
+        struct
+        {
+            char *gname;
+            // 全局变量在数据段或者bss段的标签
+            char *glabel;
+        };
+        // Local Reference
+        // 每个引用对应一个数组，用于指代数组里面的某个元素
+        struct
+        {
+            struct Ast *lref; // 引用的局部数组变量
+            int lrefoff;      // 引用数组元素的偏移量
+        };
+        // Global reference
+        struct
+        {
+            struct Ast *gref; // 引用的全局数组变量
+            int grefoff; // 被引用全局数组元素的偏移量
+        };
+        // Binary operation + - * / =
+        struct
+        {
+            struct Ast *left;
+            struct Ast *right;
+        };
+        // Unary operator，单目运算
+        struct
+        {
+            // 单目运算操作数
+            struct Ast *operand;
+        };
+
+        // Function call
+        struct
+        {
+            char *fname;
+            int nargs;
+            struct Ast **args;
+        };
+        // Declaration
+        struct
+        {
+            struct Ast *decl_var;
+            struct Ast *decl_init;
+        };
+        // Array Initializer
+        struct
+        {
+            // 数组中元素个数
+            int size;
+            // 大括号{}中 对数组进行初始化的 ast指针数组
+            struct Ast **array_init;
+        };
+    };
+} Ast;
+
 #define error(...) \
     errorf(__FILE__, __LINE__, __VA_ARGS__)
 
@@ -54,6 +179,14 @@ typedef struct
         if (!(expr))                           \
             error("Assertion failed: " #expr); \
     } while (0)
+    
+#define swap(a, b)         \
+    {                      \
+        typeof(a) tmp = a; \
+        a = b;             \
+        b = tmp;           \
+    }
+
 
 extern void errorf(char *file, int line, char *fmt, ...) __attribute__((noreturn));
 // extern void warn(char *fmt, ...) __attribute__((noreturn));
@@ -68,5 +201,19 @@ extern bool is_punct(Token *tok, char c);
 extern void unget_token(Token *tok);
 extern Token *peek_token(void);
 extern Token *read_token(void);
+
+extern char *quote(char *);
+
+extern void emit_expr(Ast *ast);
+extern char *ast_to_string(Ast *ast);
+extern char *ctype_to_string(Ctype *ctype);
+extern void print_asm_header(void);
+
+extern Ast *parse_decl_or_stmt(void);
+
+extern Ast *globals;
+extern Ast *locals;
+extern Ctype *ctype_int;
+extern Ctype *ctype_char;
 
 #endif /* QCC_H */

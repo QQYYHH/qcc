@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-05-09 15:13:27
+ * @LastEditTime: 2022-05-20 12:40:01
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -43,8 +43,8 @@ int main(int argc, char **argv)
     if (!want_ast_tree)
     {
         // 栈平衡
-        printf("leave\n\t"
-               "ret");
+        printf("\tleave\n"
+               "\tret");
     }
     printf("\n");
     return 0;

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-05-09 16:01:28
+ * @LastEditTime: 2022-05-20 13:26:47
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -30,6 +30,9 @@ static int labelseq = 0;
 static Ast *parse_expr(int prev_priority);
 static Ctype *make_ptr_type(Ctype *ctype);
 static Ctype *make_array_type(Ctype *ctype, int size);
+static Ctype *result_type(char op, Ctype *a, Ctype *b);
+static Ctype *convert_array(Ctype *ctype);
+static void expect(char punct);
 
 // ============================ make AST ================================
 
@@ -48,13 +51,25 @@ static Ast *make_ast_uop(char type, Ctype *ctype, Ast *operand)
 /**
  * 二元操作树，表达式抽象语法树
  */
-static Ast *make_ast_binop(int type, Ctype *ctype, Ast *left, Ast *right)
+static Ast *make_ast_binop(int type, Ast *left, Ast *right)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = type;
-    r->ctype = ctype;
-    r->left = left;
-    r->right = right;
+    Ctype *convert_l = convert_array(left->ctype);
+    Ctype *convert_r = convert_array(right->ctype);
+    r->ctype = result_type(type, convert_l, convert_r);
+    // 指针运算，确保左子树是指针类型，方便后续操作
+    // 但会影响 减法 操作，TODO fix
+    if(type != '=' && 
+        convert_l->type != CTYPE_PTR && 
+        convert_r->type == CTYPE_PTR)
+    {
+        r->left = right;
+        r->right = left;
+    } else{
+        r->left = left;
+        r->right = right;
+    }
     return r;
 }
 
@@ -118,23 +133,6 @@ static Ast *make_ast_lvar(Ctype *ctype, char *name)
     return r;
 }
 
-/**
- * ctype 是指针类型，指向数组元素，创建局部数组对应的reference
- * 指针地址作为基址，off代表以指针所指向变量类型为单位的偏移量
- * 符合上述场景的都可以用 引用抽象语法树来表示
- * @lvar 被引用的局部数组元素
- * @off 数组元素在数组中的偏移量
- */
-static Ast *make_ast_lref(Ctype *ctype, Ast *lvar, int off)
-{
-    Ast *r = malloc(sizeof(Ast));
-    r->type = AST_LREF;
-    r->ctype = ctype;
-    r->lref = lvar;
-    r->lrefoff = off;
-    return r;
-}
-
 static Ast *make_ast_gvar(Ctype *ctype, char *name, bool filelocal)
 {
     Ast *r = malloc(sizeof(Ast));
@@ -154,21 +152,6 @@ static Ast *make_ast_gvar(Ctype *ctype, char *name, bool filelocal)
     {
         globals = r;
     }
-    return r;
-}
-
-/**
- * 创建全局数组对应的引用变量
- * @gvar 被引用的全局数组元素
- * @off 当前引用元素在数组中的偏移量
- */
-static Ast *make_ast_gref(Ctype *ctype, Ast *gvar, int off)
-{
-    Ast *r = malloc(sizeof(Ast));
-    r->type = AST_GREF;
-    r->ctype = ctype;
-    r->gref = gvar;
-    r->grefoff = off;
     return r;
 }
 
@@ -207,12 +190,15 @@ static Ast *make_ast_array_init(int size, Ast **array_init)
     return r;
 }
 
-// 创建数组类型
-static Ctype *make_array_type(Ctype *ptr_ctype, int size)
+/**
+ * @brief 创建数组类型
+ * @param ele_ctype 数组元素的类
+ */
+static Ctype *make_array_type(Ctype *elm_ctype, int size)
 {
     Ctype *r = malloc(sizeof(Ctype));
     r->type = CTYPE_ARRAY;
-    r->ptr = ptr_ctype;
+    r->ptr = elm_ctype;
     r->size = size;
     return r;
 }
@@ -263,7 +249,7 @@ static int priority(char op)
 // ============================ parse ================================
 /**
  * 函数参数
- * func_args := expr2 | expr2, func_args | NULL
+ * func_args := expr | expr, func_args | NULL
  */
 static Ast *parse_func_args(char *fname)
 {
@@ -327,6 +313,7 @@ static Ast *parse_prim(void)
     switch (tok->type)
     {
     case TTYPE_IDENT:
+        // TODO increase array
         return parse_ident_or_func(tok->sval);
     case TTYPE_INT:
         return make_ast_int(tok->ival);
@@ -354,6 +341,7 @@ static Ctype *result_type_int(jmp_buf *jmpbuf, char op, Ctype *a, Ctype *b)
      */
     if (b->type == CTYPE_PTR)
     {
+        if(op == '=') return a;
         /* 指针与其他类型的数据只能做 + - */
         if (op != '+' && op != '-')
             goto err;
@@ -407,30 +395,44 @@ static Ctype *result_type(char op, Ctype *a, Ctype *b)
           op, ctype_to_string(a), ctype_to_string(b));
 }
 
-// 确保左子节点ast是 变量或引用类型
+/**
+ * 确保左子节点ast是 变量或 解引用类型
+ * 解引用类型是为了拿某个地址上的数据做运算
+ */
 static void ensure_lvalue(Ast *ast)
 {
     switch (ast->type)
     {
     case AST_LVAR:
-    case AST_LREF:
     case AST_GVAR:
-    case AST_GREF:
+    case AST_DEREF:
         return;
     default:
         error("lvalue expected, but got %s", ast_to_string(ast));
     }
 }
 
+// 仅将数组类型转换为指针类型，方便后续操作，其它类型的ast则直接返回
+static Ctype *convert_array(Ctype *ctype)
+{
+    if(ctype->type != CTYPE_ARRAY) return ctype;
+    return make_ptr_type(ctype->ptr);
+}
+
 /**
  * unary_expr := &|* unary_expr
- * unary_expr := prim
+ * unary_expr := prim | ( expr )
  */
 static Ast *parse_unary_expr(void)
 {
     Token *tok = read_token();
+    if(is_punct(tok, '(')){
+        Ast *r = parse_expr(0);
+        expect(')');
+        return r;
+    }
     // 取地址，也可以对指针变量取地址
-    // 暂不支持多重& 例如 &&&a
+    // 不支持多重& 例如 &&&a，因为没有意义，对地址取地址？？？
     if (is_punct(tok, '&'))
     {
         Ast *operand = parse_unary_expr();
@@ -442,27 +444,14 @@ static Ast *parse_unary_expr(void)
     if (is_punct(tok, '*'))
     {
         Ast *operand = parse_unary_expr();
-        if (operand->ctype->type != CTYPE_PTR)
+        // 也可对数组变量解引用
+        Ctype *ctype = convert_array(operand->ctype);
+        if (ctype->type != CTYPE_PTR)
             error("pointer type expected, but got %s", ast_to_string(operand));
         return make_ast_uop(AST_DEREF, operand->ctype->ptr, operand);
     }
     unget_token(tok);
     return parse_prim();
-}
-
-// 仅将数组类型转换为引用【指针】类型，方便后续操作，其它类型的ast则直接返回
-static Ast *convert_array(Ast *ast)
-{
-    // 字符数组
-    if (ast->type == AST_STRING)
-        return make_ast_gref(make_ptr_type(ctype_char), ast, 0);
-    if (ast->ctype->type != CTYPE_ARRAY)
-        return ast;
-    if (ast->type == AST_LVAR)
-        return make_ast_lref(make_ptr_type(ast->ctype->ptr), ast, 0);
-    if (ast->type != AST_GVAR)
-        error("Internal error: Gvar expected, but got %s", ast_to_string(ast));
-    return make_ast_gref(make_ptr_type(ast->ctype->ptr), ast, 0);
 }
 
 /**
@@ -483,6 +472,10 @@ static Ast *parse_expr(int prev_priority)
         Token *tok = read_token();
         if (tok == NULL)
             return ast;
+        if(tok->type != TTYPE_PUNCT){
+            unget_token(tok);
+            return ast;
+        }
         int prio = priority(tok->punct);
         /* 赋值语句中 = 的优先级比较特殊，相同符号前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面 */
         /* 因此 优先级相等的这种情况要单独拿出来讨论 */
@@ -492,30 +485,17 @@ static Ast *parse_expr(int prev_priority)
             unget_token(tok);
             return ast;
         }
-        // 如果是赋值语句，确保左子节点的类型是 变量或者数组引用
-        // 暂不支持直接对 某个地址复制
+        // 如果是赋值语句，确保左子节点的类型是 变量 或者 解引用
         if (is_equal)
             ensure_lvalue(ast);
-        // 这里和源码有所区别
-        // 仅将数组类型变量 转换为引用【指针】类型，方便后续生成代码
-        ast = convert_array(ast);
         Ast *right = parse_expr(prio);
-        right = convert_array(right);
-        Ctype *ctype = result_type(tok->punct, ast->ctype, right->ctype);
-
-        // 这里有一个交换操作，将指针类型的子树放在左边，方便后续处理
-        // 这种交换操作并不影响运算的优先级
-        // 但会影响 减法 操作，TODO fix
-        if (!is_punct(tok, '=') && ctype->type == CTYPE_PTR && ast->ctype->type != CTYPE_PTR)
-            swap(ast, right);
-        ast = make_ast_binop(tok->punct, ctype, ast, right);
+        ast = make_ast_binop(tok->punct, ast, right);
     }
 }
 
 static Ctype *get_ctype(Token *tok)
 {
-    if (tok->type != TTYPE_IDENT)
-        return NULL;
+    if(!tok || tok->type != TTYPE_IDENT) return NULL;
     if (!strcmp(tok->sval, "int"))
         return ctype_int;
     if (!strcmp(tok->sval, "char"))
@@ -537,10 +517,10 @@ static void expect(char punct)
 
 /**
  * 数组的初始化数据部分
- * decl_array_init := "char* array" | { expr, expr, ... }
+ * decl_array_init := char* "array" | { expr, expr, ... }
  * @ctype array_ctype
  */
-static Ast *parse_decl_array_initializer(Ctype *ctype)
+static Ast *parse_decl_array_init(Ctype *ctype)
 {
     Token *tok = read_token();
     // 字符数组
@@ -550,84 +530,124 @@ static Ast *parse_decl_array_initializer(Ctype *ctype)
     if (!is_punct(tok, '{'))
         error("Expected an initializer list, but got %s", token_to_string(tok));
     Ast **init = malloc(sizeof(Ast *) * ctype->size);
-    for (int i = 0; i < ctype->size; i++)
+    for (int i = 0; ; i++)
     {
+        tok = read_token();
+        if(is_punct(tok, '}')) break;
+        unget_token(tok);
         init[i] = parse_expr(0);
+        if(!init[i]) error("Unexpected terminate");
         // 保证初始化元素类型 和 数组类型兼容
         result_type('=', init[i]->ctype, ctype->ptr);
         tok = read_token();
-        if (is_punct(tok, '}') && (i == ctype->size - 1))
-            break;
-        if (!is_punct(tok, ','))
-            error("comma expected, but got %s", token_to_string(tok));
-        if (i == ctype->size - 1)
-        {
-            tok = read_token();
-            if (!is_punct(tok, '}'))
-                error("'}' expected, but got %s", token_to_string(tok));
-            break;
-        }
+        /* whether , or } */
+        if(!is_punct(tok, ',')) unget_token(tok);
     }
     return make_ast_array_init(ctype->size, init);
 }
 
+static void check_intexp(Ast *ast) {
+  if (ast->type != AST_LITERAL || ast->ctype->type != CTYPE_INT)
+    error("Integer expected, but got %s", ast_to_string(ast));
+}
+
 /**
- * decl_init := array_init | expr
+ * @brief 有初始化数值 的declaration
+ * 比如 int a = value
+ * decl_init := value
+ * value := array_init | expr
+ * 
+ * TODO check the length of the array
  */
-static Ast *parse_declinitializer(Ctype *ctype)
-{
-    if (ctype->type == CTYPE_ARRAY)
-        return parse_decl_array_initializer(ctype);
+static Ast *parse_decl_init_value(Ast *var)
+{   Ast *init;
+    if (var->ctype->type == CTYPE_ARRAY)
+    {
+        init = parse_decl_array_init(var->ctype);
+        // 暂时不检查数组的长度
+       
+        return init;
+    }
     return parse_expr(0);
 }
 
 /**
- * 声明
- * decl := ctype identifer = decl_init
- * 其实 声明 本质上来讲还是赋值操作，只不过要考虑类型
+ * @brief 解析decl语句的前半段，即变量类型 和 变量名
+ * decl_var := ctype var
+ * for example： int a
+ * @return declared variable type
+ */
+static Ctype *parse_decl_var(){
+    Token *tok = read_token();
+    Ctype *ctype = get_ctype(tok);
+    if (!ctype)
+        error("Type expected, but got %s", token_to_string(tok));
+    /* Maybe pointer ctype */
+    for(;;){
+        tok = read_token();
+        if(!tok) error("Unexpected terminated..");
+        if(!is_punct(tok, '*')){
+            unget_token(tok);
+            break;
+        }
+        ctype = make_ptr_type(ctype);
+    }
+    return ctype;
+}
+
+/**
+ * @brief 尝试解析数组类型的变量，支持多维数组
+ * @param ctype 数组元素的类型
+ * @return 如果不是数组类型，直接返回原类型，否则返回数组类型
+ */
+static Ctype *parse_maybe_array(Ctype *ctype){
+    Token *tok = read_token();
+    if(!is_punct(tok, '[')){
+        unget_token(tok);
+        return ctype;
+    }
+    int dim = -1;
+    tok = peek_token();
+    if(!is_punct(tok, ']')){
+        Ast *size = parse_expr(0);
+        // 保证size必须是整数字面量
+        // TODO 支持表达式类型的size
+        check_intexp(size);
+        dim = size->ival;
+    }
+    expect(']');
+    Ctype *sub = parse_maybe_array(ctype);
+    /* 不是最后一维 且 当前维和下一维都没有大小，则报错 */
+    if(sub->type == CTYPE_ARRAY && dim == -1 && sub->size == -1)
+        error("Array size is not specified");
+    return make_array_type(sub, dim);
+}
+
+/**
+ * 声明 declaration
+ * with init value    ->   decl := ctype identifer = decl_init; 
+ * without init value ->   decl := ctype identifier; 
  * TODO 逗号分隔变量的声明 比如 int a = 1, b = 2;
  */
 static Ast *parse_decl()
 {
-    Ctype *ctype = get_ctype(read_token());
-    Token *tok;
-    // 判断是否是指针类型的变量
-    // 也可能是多维指针变量
-    for (;;)
-    {
-        tok = read_token();
-        if (!tok)
-            error("Unexpected terminated..");
-        if (!is_punct(tok, '*'))
-            break;
-        ctype = make_ptr_type(ctype);
-    }
+    Ctype *ctype = parse_decl_var();
+    Token *varname = read_token();
+    if (varname->type != TTYPE_IDENT)
+        error("Identifier expected, but got %s", token_to_string(varname));
+    /* 继续解析，尝试数组类型 */
+    ctype = parse_maybe_array(ctype);
+    Ast *var = make_ast_lvar(ctype, varname->sval);
 
-    if (tok->type != TTYPE_IDENT)
-        error("Identifier expected, but got %s", token_to_string(tok));
-    Token *tok_varname = tok;
-    for (;;)
-    {
-        tok = read_token();
-        if (is_punct(tok, '['))
-        {
-            // TODO 数组size 支持复杂表达式
-            // 目前仅支持 整数字面量
-            Ast *size = parse_expr(0);
-            if (size->type != AST_LITERAL || size->ctype->type != CTYPE_INT)
-                error("Integer expected, but got %s", ast_to_string(size));
-            expect(']');
-            ctype = make_array_type(ctype, size->ival);
-        }
-        else
-        {
-            unget_token(tok);
-            break;
-        }
-    }
-    Ast *var = make_ast_lvar(ctype, tok_varname->sval);
-    expect('=');
-    Ast *init = parse_declinitializer(ctype);
+    Token *tok = read_token();
+    Ast *init = NULL;
+    /* 声明的同时给变量赋予 初始值 */
+    if(is_punct(tok, '='))
+        init = parse_decl_init_value(var);
+    else  // 只声明变量，未进行初始化
+        unget_token(tok);
+    /* 声明以分号结束 */
+    expect(';');
     return make_ast_decl(var, init);
 }
 
@@ -642,7 +662,8 @@ Ast *parse_decl_or_stmt()
     if (!tok)
         return NULL;
     Ast *ast = is_type_keyword(tok) ? parse_decl() : parse_expr(0);
-    expect(';');
+    if(ast->type != AST_DECL)
+        expect(';');
     return ast;
 }
 
@@ -664,8 +685,8 @@ char *ctype_to_string(Ctype *ctype)
         return get_cstring(s);
     case CTYPE_ARRAY:
         s = make_string();
-        string_appendf(s, "%s", ctype_to_string(ctype->ptr));
         string_appendf(s, "[%d]", ctype->size);
+        string_appendf(s, "%s", ctype_to_string(ctype->ptr));
         return get_cstring(s);
     default:
         error("Unknown ctype: %d", ctype);
@@ -698,12 +719,6 @@ static void ast_to_string_int(Ast *ast, String *buf)
         break;
     case AST_GVAR:
         string_appendf(buf, "%s", ast->gname);
-        break;
-    case AST_LREF:
-        string_appendf(buf, "%s[%d]", ast_to_string(ast->lref), ast->lrefoff);
-        break;
-    case AST_GREF:
-        string_appendf(buf, "%s[%d]", ast_to_string(ast->gref), ast->grefoff);
         break;
     case AST_FUNCALL:
         string_appendf(buf, "%s(", ast->fname);

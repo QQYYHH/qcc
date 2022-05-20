@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-05-09 16:11:47
+ # @LastEditTime: 2022-05-20 13:37:28
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -85,8 +85,8 @@ testast '(decl int a 3)(* (& a))' 'int a=3;*&a;'
 testast '(decl int a 3)(decl int* b (& a))(* b)' 'int a=3;int *b=&a;*b;'
 # Array
 testast '(decl char* s "abc")' 'char *s="abc";'
-testast '(decl char[4] s "abc")' 'char s[4]="abc";'
-testast '(decl int[3] a {1,2,3})' 'int a[3]={1,2,3};'
+testast '(decl [4]char s "abc")' 'char s[4]="abc";'
+testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
 
 # Expression
 # Basic arithmetic
@@ -137,8 +137,9 @@ testfail '&a();'
 testfail '&&a;'
 
 echo "All tests passed"
+make clean
 test 30 'int a[3]={20, 30, 40}; *a + 1 = 1;a[1];'
-# s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer b is %p and pointer c is %p", b, c);'
+# s='int a[2]={55,67};int *b=a+1;*b;'
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
-# echo "$s" | ./qcc -p
+# echo "$s" | ./qcc
 # compile "$s"

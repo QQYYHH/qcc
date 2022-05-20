@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-05-09 14:47:19
+ * @LastEditTime: 2022-05-20 13:32:40
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -9,10 +9,18 @@
  */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include "qcc.h"
 
 // x64下函数前6个实参会依次放入下列寄存器
 static char *REGS[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+
+void emit_expr(Ast *ast);
+
+#define emit(...)        emitf(__LINE__, "\t" __VA_ARGS__)
+#define emit_label(...)  emitf(__LINE__, __VA_ARGS__)
+
+extern void emitf(int line, char *fmt, ...);
 
 // ===================== emit ====================
 
@@ -49,24 +57,86 @@ static int ctype_size(Ctype *ctype)
 
 /**
  * 全局数据加载
- * 如果是数组或指针，则仅加载地址
+ * 如果是数组，则仅加载首元素地址
  * .data or .bss --> rax
- * @off 如果是数组，将偏移为off的数组元素加载到rax中
- * @label 全局数组在.data or .bss中的标签
+ * @param ctype 要加载的数据类型
+ * @param label 全局数组在.data or .bss中的标签
+ * label中可以蕴含data段中数据的偏移量
+ * 比如 a标签偏移4字节的数据的标签是 a+4
  */
-static void emit_gload(Ctype *ctype, char *label, int off)
+static void emit_gload(Ctype *ctype, char *label)
 {
     if (ctype->type == CTYPE_ARRAY)
     {
-        printf("lea %s(%%rip), %%rax\n\t", label);
-        // 由于不确定数组元素的类型，这里仅将元素地址传到rax中
-        if (off)
-            printf("add $%d, %%rax\n\t", ctype_size(ctype->ptr) * off);
+        emit("lea %s(%%rip), %%rax", label);
         return;
     }
     char *reg;
     int size = ctype_size(ctype);
-    printf("xor %%rax, %%rax\n\t");
+    switch (size)
+    {
+    case 1:
+        emit("xor %%rax, %%rax");
+        reg = "al";
+        break;
+    case 4:
+        emit("xor %%rax, %%rax");
+        reg = "eax";
+        break;
+    case 8:
+        reg = "rax";
+        break;
+    default:
+        error("Unknown data size: %s: %d", ctype_to_string(ctype), size);
+    }
+    emit("mov %s(%%rip), %%%s", label, reg);
+}
+
+/**
+ * @brief 局部数据加载，如果是数组，则仅加载数组元素首地址
+ * @param ctype 要加载的数据类型
+ * @param loff 要加载局部变量在栈中相对于rbp的偏移量
+ * stack --> rax
+ */
+static void emit_lload(Ctype *ctype, int loff)
+{
+    /* 如果是数组，将最终根据偏移量计算得到的地址 加载到rax */
+    if(ctype->type == CTYPE_ARRAY){
+        emit("lea -%d(%%rbp), %%rax", loff);
+        return;
+    }
+    /* 其他类型*/
+    int size = ctype_size(ctype);
+    switch (size)
+    {
+    case 1:
+        emit("xor %%rax, %%rax");
+        emit("mov -%d(%%rbp), %%al", loff);
+        break;
+    case 4:
+        emit("xor %%rax, %%rax");
+        emit("mov -%d(%%rbp), %%eax", loff);
+        break;
+    case 8:
+        emit("mov -%d(%%rbp), %%rax", loff);
+        break;
+    default:
+        error("Unknown data size: %s: %d", ctype_to_string(ctype), size);
+    }
+}
+
+/**
+ * rax --> .data or .bss
+ * 将rax寄存器中的数据保存在data或bss段上相应的标签位置
+ * @param ctype 要存放到data段的数据类型
+ * @param label 全局变量在data或bss段上相应的标签位置，label+off可以代表全局偏移
+ */
+static void emit_gsave(Ctype *ctype, char *label)
+{
+    /* 数组类型的变量无法直接存放到data段中 */
+    assert(ctype->type != CTYPE_ARRAY);
+    char *reg;
+    int size = ctype_size(ctype);
     switch (size)
     {
     case 1:
@@ -81,83 +151,14 @@ static void emit_gload(Ctype *ctype, char *label, int off)
     default:
         error("Unknown data size: %s: %d", ctype_to_string(ctype), size);
     }
-    printf("mov %s(%%rip), %%%s\n\t", label, reg);
-    // 如果off不为0，说明当前 ctype->type == CTYPE_PTR
-    // 要加上 以指针指向类型为单位 的偏移量
-    // TODO 处理逻辑
-    if (off)
-    {
-        printf("add $%d, %%rax\n\t", off * ctype_size(ctype->ptr));
-    }
-}
-
-/**
- * 局部数据加载
- * 如果是指针或数组，则仅加载地址
- * stack --> rax
- */
-static void emit_lload(Ast *var, int off)
-{
-    if (var->ctype->type == CTYPE_ARRAY)
-    {
-        printf("lea -%d(%%rbp), %%rax\n\t", var->loff);
-        if (off)
-            printf("add $%d, %%rax\n\t", ctype_size(var->ctype->ptr) * off);
-        return;
-    }
-    int size = ctype_size(var->ctype);
-    printf("xor %%rax, %%rax\n\t");
-    switch (size)
-    {
-    case 1:
-        printf("mov -%d(%%rbp), %%al\n\t", var->loff);
-        break;
-    case 4:
-        printf("mov -%d(%%rbp), %%eax\n\t", var->loff);
-        break;
-    case 8:
-        printf("mov -%d(%%rbp), %%rax\n\t", var->loff);
-        break;
-    default:
-        error("Unknown data size: %s: %d", ast_to_string(var), size);
-    }
-    // 如果是指针变量
-    if (off)
-        printf("add $%d, %%rax\n\t", off * ctype_size(var->ctype->ptr));
-}
-
-/**
- * rax --> .data or .bss
- * 将rax寄存器中的数据保存在data或bss段上相应的标签位置
- */
-static void emit_gsave(Ast *var, int off)
-{
-    assert(var->ctype->type != CTYPE_ARRAY);
-    char *reg;
-    printf("push %%rbx\n\t");
-    // 下面问题很大
-    printf("mov %s(%%rip), %%rbx\n\t", var->glabel);
-    int size = ctype_size(var->ctype);
-    switch (size)
-    {
-    case 1:
-        reg = "al";
-        break;
-    case 4:
-        reg = "eax";
-        break;
-    case 8:
-        reg = "rax";
-        break;
-    default:
-        error("Unknown data size: %s: %d", ast_to_string(var), size);
-    }
-    printf("mov %s, %d(%%rbp)\n\t", reg, off * size);
-    printf("pop %%rbx\n\t");
+    emit("mov %%%s, %s(%%rip)", reg, label);
 }
 
 /**
  * 将局部变量存放在栈中
+ * @param ctype 要保存的数据类型
+ * @param loff 数据要保存在栈的基址
+ * @param off 相对于基址偏移量
  * rax --> stack
  */
 static void emit_lsave(Ctype *ctype, int loff, int off)
@@ -176,7 +177,35 @@ static void emit_lsave(Ctype *ctype, int loff, int off)
         reg = "rax";
         break;
     }
-    printf("mov %%%s, -%d(%%rbp)\n\t", reg, loff + off * size);
+    emit("mov %%%s, -%d(%%rbp)", reg, loff + off * size);
+}
+
+/**
+ * @brief 给解引用变量赋值
+ * 例如：*a = 1
+ * 此时要赋的值已经在rax中
+ */
+static void emit_assign_deref(Ast *var)
+{
+    /* 将rax里面要赋值的数据暂存在栈中 */
+    emit("push %%rax");
+    emit_expr(var->operand);
+    emit("pop %%rcx");
+    char *reg;
+    int size = ctype_size(var->operand->ctype->ptr);
+    switch (size)
+    {
+    case 1:
+        reg = "cl";
+        break;
+    case 4:
+        reg = "ecx";
+        break;
+    case 8:
+        reg = "rcx";
+        break;
+    }
+    emit("mov %%%s, (%%rax)", reg);
 }
 
 /**
@@ -187,8 +216,8 @@ static void emit_lsave(Ctype *ctype, int loff, int off)
  */
 static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
 {
-    /* 确保左子树是指针类型 */
-    assert(left->ctype->type == CTYPE_PTR);
+    /* 确保左子树是指针 or 数组类型 */
+    assert(left->ctype->type == CTYPE_PTR || left->ctype->type == CTYPE_ARRAY);
     /* 如果左右子树都是指针类型 */
     if (right->ctype->type == CTYPE_PTR)
     {
@@ -198,50 +227,46 @@ static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
         if (op == '+')
             error("No meaning for ptr plus ptr");
         emit_expr(left);
-        printf("push %%rax\n\t");
+        emit("push %%rax");
         emit_expr(right);
         int sft = ctype_shift(left->ctype->ptr);
-        printf("mov %%rax, %%rbx\n\t"
-               "pop %%rax\n\t"
-               "sub %%rbx, %%rax\n\t"
-               "sar $%d, %%rax\n\t",
-               sft);
+        emit("mov %%rax, %%rbx");
+        emit("pop %%rax");
+        emit("sub %%rbx, %%rax");
+        emit("sar $%d, %%rax", sft);
         return;
     }
 
     emit_expr(left);
-    printf("push %%rax\n\t");
+    emit("push %%rax");
     emit_expr(right);
     /* 根据指针指向的类型，计算偏移量 */
     int sft = ctype_shift(left->ctype->ptr);
     if (sft > 0)
         /* sal 有符号左移动 */
-        printf("sal $%d, %%rax\n\t", sft);
+        emit("sal $%d, %%rax", sft);
     char *s = "add";
     if (op == '-')
         s = "sub";
-    printf("mov %%rax, %%rbx\n\t"
-           "pop %%rax\n\t"
-           "%s %%rbx, %%rax\n\t",
-           s);
+    emit("mov %%rax, %%rbx");
+    emit("pop %%rax");
+    emit("%s %%rbx, %%rax", s);
 }
 
 static void emit_assign(Ast *var, Ast *value)
 {
     emit_expr(value);
+    if(var->type == AST_DEREF){
+        emit_assign_deref(var);
+        return;
+    }
     switch (var->type)
     {
     case AST_LVAR:
         emit_lsave(var->ctype, var->loff, 0);
         break;
-    case AST_LREF:
-        emit_lsave(var->lref->ctype, var->lref->loff, var->lrefoff);
-        break;
     case AST_GVAR:
-        emit_gsave(var, 0);
-        break;
-    case AST_GREF:
-        emit_gsave(var->gref, var->grefoff);
+        emit_gsave(var->ctype, var->glabel);
         break;
     default:
         error("internal error when assigning...");
@@ -286,20 +311,20 @@ static void emit_binop(Ast *ast)
         error("invalid operator '%c'", ast->type);
     }
     emit_expr(ast->left);
-    printf("push %%rax\n\t");
+    emit("push %%rax");
     emit_expr(ast->right);
-    printf("mov %%rax, %%rbx\n\t");
-    printf("pop %%rax\n\t");
+    emit("mov %%rax, %%rbx");
+    emit("pop %%rax");
     if (ast->type == '/')
     {
         /* rdx存放余数 */
         /* rax存放商 */
-        printf("mov $0, %%rdx\n\t");
-        printf("idiv %%rbx\n\t");
+        emit("mov $0, %%rdx");
+        emit("idiv %%rbx");
     }
     else
     {
-        printf("%s %%rbx, %%rax\n\t", op);
+        emit("%s %%rbx, %%rax", op);
     }
 }
 
@@ -308,65 +333,52 @@ void emit_expr(Ast *ast)
     switch (ast->type)
     {
     case AST_LITERAL:
-        printf("xor %%rax, %%rax\n\t");
         switch (ast->ctype->type)
         {
         case CTYPE_INT:
-            printf("mov $%d, %%rax\n\t", ast->ival);
+            emit("mov $%d, %%rax", ast->ival);
             break;
         case CTYPE_CHAR:
-            printf("mov $%d, %%al\n\t", ast->c);
+            emit("xor %%rax, %%rax");
+            emit("mov $%d, %%al", ast->c);
             break;
         default:
             error("internal error");
         }
         break;
     case AST_STRING:
-        printf("lea %s(%%rip), %%rax\n\t", ast->slabel);
+        emit("lea %s(%%rip), %%rax", ast->slabel);
         break;
     case AST_LVAR:
-        emit_lload(ast, 0);
-        break;
-    case AST_LREF:
-        // 必须引用局部变量
-        assert(ast->lref->type == AST_LVAR);
-        emit_lload(ast->lref, ast->lrefoff);
+        emit_lload(ast->ctype, ast->loff);
         break;
     case AST_GVAR:
-        emit_gload(ast->ctype, ast->glabel, 0);
-        break;
-    case AST_GREF:
-        if (ast->gref->type == AST_STRING)
-        {
-            printf("lea %s(%%rip), %%rax\n\t", ast->gref->slabel);
-        }
-        else
-        {
-            assert(ast->gref->type == AST_GVAR);
-            emit_gload(ast->gref->ctype, ast->gref->glabel, ast->grefoff);
-        }
+        emit_gload(ast->ctype, ast->glabel);
         break;
     case AST_FUNCALL:
         // 调用前 先将参数寄存器压栈，保存执行环境
         for (int i = 0; i < ast->nargs; i++)
         {
-            printf("push %%%s\n\t", REGS[i]);
+            emit("push %%%s", REGS[i]);
         }
         for (int i = 0; i < ast->nargs; i++)
         {
             // 解析参数
             emit_expr(ast->args[i]);
-            printf("mov %%rax, %%%s\n\t", REGS[i]);
+            emit("mov %%rax, %%%s", REGS[i]);
         }
-        printf("mov $0, %%rax\n\t"); // 将rax初始化为0
-        printf("call %s\n\t", ast->fname);
+        emit("mov $0, %%rax"); // 将rax初始化为0
+        emit("call %s", ast->fname);
         // 调用后，恢复执行环境
         for (int i = ast->nargs - 1; i >= 0; i--)
         {
-            printf("pop %%%s\n\t", REGS[i]);
+            emit("pop %%%s", REGS[i]);
         }
         break;
     case AST_DECL:
+        if(!ast->decl_init) return ;
+        
+        // array = {xxx, xxx, xxx}
         if (ast->decl_init->type == AST_ARRAY_INIT)
         {
             for (int i = 0; i < ast->decl_init->size; i++)
@@ -375,19 +387,22 @@ void emit_expr(Ast *ast)
                 emit_lsave(ast->decl_var->ctype->ptr, ast->decl_var->loff, -i);
             }
         }
+        // array = "xxxx"
         else if (ast->decl_var->ctype->type == CTYPE_ARRAY)
         {
             assert(ast->decl_init->type == AST_STRING);
             int i = 0;
             for (char *p = ast->decl_init->sval; *p; p++, i++)
-                printf("movb $%d, -%d(%%rbp)\n\t", *p, ast->decl_var->loff - i);
-            printf("movb $0, -%d(%%rbp)\n\t", ast->decl_var->loff - i);
+                emit("movb $%d, -%d(%%rbp)", *p, ast->decl_var->loff - i);
+            emit("movb $0, -%d(%%rbp)", ast->decl_var->loff - i);
         }
+        // char *a = "xxxx"
         else if (ast->decl_init->type == AST_STRING)
         {
-            emit_gload(ast->decl_init->ctype, ast->decl_init->slabel, 0);
+            emit_gload(ast->decl_init->ctype, ast->decl_init->slabel);
             emit_lsave(ast->decl_var->ctype, ast->decl_var->loff, 0);
         }
+        // 其他declaration类型
         else
         {
             // 初始化值是变量表达式
@@ -399,7 +414,7 @@ void emit_expr(Ast *ast)
         /* 保证操作数是变量类型 */
         assert(ast->operand->type == AST_LVAR);
         /* 将变量在栈中存放地址放入rax */
-        printf("lea -%d(%%rbp), %%rax\n\t", ast->operand->loff);
+        emit("lea -%d(%%rbp), %%rax", ast->operand->loff);
         break;
     case AST_DEREF:
         /* 保证操作数是指针 */
@@ -421,9 +436,9 @@ void emit_expr(Ast *ast)
         default:
             error("interal error");
         }
-        printf("xor %%rbx, %%rbx\n\t");
-        printf("mov (%%rax), %%%s\n\t", reg);
-        printf("mov %%rbx, %%rax\n\t");
+        emit("xor %%rbx, %%rbx");
+        emit("mov (%%rax), %%%s", reg);
+        emit("mov %%rbx, %%rax");
         break;
     default:
         // 其他情况， 解析二元运算树
@@ -435,14 +450,13 @@ static void emit_data_section()
 {
     if (!globals)
         return;
-    printf("\t.data\n");
+    emit(".data");
     for (Ast *p = globals; p; p = p->next)
     {
         assert(p->type == AST_STRING);
-        printf("%s:\n\t", p->slabel);
-        printf(".string \"%s\"\n", quote(p->sval));
+        emit_label("%s:", p->slabel);
+        emit(".string \"%s\"", quote(p->sval));
     }
-    printf("\t");
 }
 
 // >= n 的最小的8的倍数
@@ -466,7 +480,7 @@ void print_asm_header(void)
            ".global mymain\n"
            "mymain:\n\t"
            "push %%rbp\n\t"
-           "mov %%rsp, %%rbp\n\t");
+           "mov %%rsp, %%rbp\n");
     if (locals)
-        printf("sub $%d, %%rsp\n\t", off);
+        printf("\tsub $%d, %%rsp\n", off);
 }

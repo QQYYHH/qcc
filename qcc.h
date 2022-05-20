@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-05-09 14:54:45
+ * @LastEditTime: 2022-05-20 13:31:01
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -49,10 +49,8 @@ enum
 {
     AST_LITERAL, // 字面量，包括常量、字符
     AST_STRING,
-    AST_LVAR, // 局部变量、引用
-    AST_LREF,
-    AST_GVAR, // 全局变量、引用
-    AST_GREF,
+    AST_LVAR, // 局部变量
+    AST_GVAR, // 全局变量
     AST_FUNCALL,
     AST_DECL,       // declaration
     AST_ARRAY_INIT, // 数组初始化
@@ -116,19 +114,6 @@ typedef struct Ast
             char *gname;
             // 全局变量在数据段或者bss段的标签
             char *glabel;
-        };
-        // Local Reference
-        // 每个引用对应一个数组，用于指代数组里面的某个元素
-        struct
-        {
-            struct Ast *lref; // 引用的局部数组变量
-            int lrefoff;      // 引用数组元素的偏移量
-        };
-        // Global reference
-        struct
-        {
-            struct Ast *gref; // 引用的全局数组变量
-            int grefoff; // 被引用全局数组元素的偏移量
         };
         // Binary operation + - * / =
         struct

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-01 16:41:38
+ * @LastEditTime: 2022-06-01 20:06:37
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -17,8 +17,8 @@
 #define MAX_ARGS 6
 
 // 全局、局部变量表
-Ast *globals = NULL;
-Ast *locals = NULL;
+List *globals = EMPTY_LIST;
+List *locals = EMPTY_LIST;
 
 // int, char 类型
 Ctype *ctype_int = &(Ctype){CTYPE_INT, NULL};
@@ -107,8 +107,7 @@ static Ast *make_ast_str(char *str)
     r->ctype = make_array_type(ctype_char, strlen(str) + 1);
     r->sval = str;
     r->slabel = make_next_label();
-    r->next = globals;
-    globals = r;
+    list_append(globals, r);
     return r;
 }
 
@@ -118,19 +117,7 @@ static Ast *make_ast_lvar(Ctype *ctype, char *name)
     r->type = AST_LVAR;
     r->ctype = ctype;
     r->lname = name;
-    r->next = NULL;
-    // 附加到链表尾部
-    if (locals)
-    {
-        Ast *p;
-        for (p = locals; p->next; p = p->next)
-            ;
-        p->next = r;
-    }
-    else
-    {
-        locals = r;
-    }
+    if(locals) list_append(locals, r);
     return r;
 }
 
@@ -141,29 +128,16 @@ static Ast *make_ast_gvar(Ctype *ctype, char *name, bool filelocal)
     r->ctype = ctype;
     r->gname = name;
     r->glabel = filelocal ? make_next_label() : name;
-    r->next = NULL;
-    if (globals)
-    {
-        Ast *p;
-        for (p = locals; p->next; p = p->next)
-            ;
-        p->next = r;
-    }
-    else
-    {
-        globals = r;
-    }
+    list_append(globals, r);
     return r;
 }
 
-static Ast *make_ast_funcall(char *fname, int nargs, Ast **args)
+static Ast *make_ast_funcall(Ctype *ctype, char *fname, List *args)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_FUNCALL;
-    // 默认函数返回类型为 int
-    r->ctype = ctype_int;
+    r->ctype = ctype;
     r->fname = fname;
-    r->nargs = nargs;
     r->args = args;
     return r;
 }
@@ -181,12 +155,11 @@ static Ast *make_ast_decl(Ast *var, Ast *init)
 /**
  * @array_init 大括号{}中数组元素的初始化值
  */
-static Ast *make_ast_array_init(int size, Ast **array_init)
+static Ast *make_ast_array_init(List *array_init)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_ARRAY_INIT;
     r->ctype = NULL;
-    r->size = size;
     r->array_init = array_init;
     return r;
 }
@@ -215,17 +188,15 @@ static Ctype *make_ptr_type(Ctype *ptr_ctype)
 
 static Ast *find_var(char *name)
 {
-    // 先遍历局部链表
-    for (Ast *v = locals; v; v = v->next)
-    {
-        if (!strcmp(name, v->lname))
-            return v;
+    // 先遍历locals
+    for(Iter *i = list_iter(locals); !iter_end(i);){
+        Ast *var = iter_next(i);
+        if(!strcmp(name, var->lname)) return var;
     }
-    // 再遍历全局链表
-    for (Ast *v = globals; v; v = v->next)
-    {
-        if (!strcmp(name, v->gname))
-            return v;
+    // 再遍历 globals
+    for(Iter *i = list_iter(globals); !iter_end(i);){
+        Ast *var = iter_next(i);
+        if(!strcmp(name, var->gname)) return var;
     }
     return NULL;
 }
@@ -254,18 +225,18 @@ static int priority(char op)
  */
 static Ast *parse_func_args(char *fname)
 {
-    Ast **args = malloc(sizeof(Ast *) * (MAX_ARGS + 1));
-    int i = 0, nargs = 0;
+    List *args = make_list();
+    int i = 0;
     for (; i < MAX_ARGS + 1; i++)
     {
+        // 这里对函数调用的参数进行限制
+        // TODO 解除函数参数数量的限制
         if (i == MAX_ARGS)
             error("Too many arguments: %s", fname);
         Token *tok = read_token();
-        if (is_punct(tok, ')'))
-            break;
+        if (is_punct(tok, ')')) break;
         unget_token(tok);
-        args[i] = parse_expr(0);
-        nargs++;
+        list_append(args, parse_expr(0));
         tok = read_token();
         if (is_punct(tok, ')'))
             break;
@@ -279,7 +250,7 @@ static Ast *parse_func_args(char *fname)
         else
             error("Unexpected token: '%s'", token_to_string(tok));
     }
-    return make_ast_funcall(fname, nargs, args);
+    return make_ast_funcall(ctype_int, fname, args);
 }
 
 /**
@@ -570,26 +541,23 @@ static Ast *parse_decl_array_init(Ctype *ctype)
     // 其它数组
     if (!is_punct(tok, '{'))
         error("Expected an initializer list, but got %s", token_to_string(tok));
-    Ast **init;
-    if(ctype->size == -1) // 如果没有定义大小，预先申请大小为10的空间
-        init = malloc(sizeof(Ast *) * 10);
-    else
-        init = malloc(sizeof(Ast *) * ctype->size);
+    List *initlist = make_list();
     int i = 0;
     for (i = 0; ; i++)
     {
         tok = read_token();
         if(is_punct(tok, '}')) break;
         unget_token(tok);
-        init[i] = parse_expr(0);
-        if(!init[i]) error("Unexpected terminate");
+        Ast *init_val = parse_expr(0);
+        if(!init_val) error("Unexpected terminate");
+        list_append(initlist, init_val);
         // 保证初始化元素类型 和 数组元素类型兼容
-        result_type('=', init[i]->ctype, ctype->ptr);
+        result_type('=', init_val->ctype, ctype->ptr);
         tok = read_token();
         /* whether , or } */
         if(!is_punct(tok, ',')) unget_token(tok);
     }
-    return make_ast_array_init(i, init);
+    return make_ast_array_init(initlist);
 }
 
 static void check_intexp(Ast *ast) {
@@ -612,7 +580,9 @@ static Ast *parse_decl_init_value(Ast *var)
     if (var->ctype->type == CTYPE_ARRAY)
     {
         init = parse_decl_array_init(var->ctype);
-        int len = (init->type == AST_STRING)? strlen(init->sval) + 1: init->size;
+        int len = (init->type == AST_STRING)
+            ? strlen(init->sval) + 1
+            : list_len(init->array_init);
         if(var->ctype->size == -1){
             var->ctype->size = len;
         }
@@ -774,10 +744,10 @@ static void ast_to_string_int(Ast *ast, String *buf)
         break;
     case AST_FUNCALL:
         string_appendf(buf, "%s(", ast->fname);
-        for (int i = 0; i < ast->nargs; i++)
+        for (Iter *i = list_iter(ast->args); !iter_end(i);)
         {
-            string_appendf(buf, "%s", ast_to_string(ast->args[i]));
-            if (i < ast->nargs - 1)
+            string_appendf(buf, "%s", ast_to_string(iter_next(i)));
+            if (!iter_end(i))
                 string_appendf(buf, ",");
         }
         string_appendf(buf, ")");
@@ -796,10 +766,10 @@ static void ast_to_string_int(Ast *ast, String *buf)
         break;
     case AST_ARRAY_INIT:
         string_appendf(buf, "{");
-        for (int i = 0; i < ast->size; i++)
+        for (Iter *i = list_iter(ast->array_init); !iter_end(i);)
         {
-            ast_to_string_int(ast->array_init[i], buf);
-            if (i != ast->size - 1)
+            ast_to_string_int(iter_next(i), buf);
+            if (!iter_end(i))
                 string_appendf(buf, ",");
         }
         string_appendf(buf, "}");

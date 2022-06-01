@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-01 15:46:49
+ * @LastEditTime: 2022-06-01 20:38:18
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -23,6 +23,16 @@ void emit_expr(Ast *ast);
 extern void emitf(int line, char *fmt, ...);
 
 // ===================== emit ====================
+
+/**
+ * @brief 获取数组中元素的类型
+ * 需要考虑多维数组的情况
+ */
+static Ctype *get_array_element_ctype(Ctype *array){
+    Ctype *p = array;
+    while(p->type == CTYPE_ARRAY) p = p->ptr;
+    return p;
+}
 
 static int ctype_shift(Ctype *ctype)
 {
@@ -357,20 +367,21 @@ void emit_expr(Ast *ast)
         break;
     case AST_FUNCALL:
         // 调用前 先将参数寄存器压栈，保存执行环境
-        for (int i = 0; i < ast->nargs; i++)
+        for (int i = 0; i < list_len(ast->args); i++)
         {
             emit("push %%%s", REGS[i]);
         }
-        for (int i = 0; i < ast->nargs; i++)
+        int j = 0;
+        for (Iter *i = list_iter(ast->args); !iter_end(i); j++)
         {
             // 解析参数
-            emit_expr(ast->args[i]);
-            emit("mov %%rax, %%%s", REGS[i]);
+            emit_expr(iter_next(i));
+            emit("mov %%rax, %%%s", REGS[j]);
         }
         emit("mov $0, %%rax"); // 将rax初始化为0
         emit("call %s", ast->fname);
         // 调用后，恢复执行环境
-        for (int i = ast->nargs - 1; i >= 0; i--)
+        for (int i = list_len(ast->args) - 1; i >= 0; i--)
         {
             emit("pop %%%s", REGS[i]);
         }
@@ -381,10 +392,11 @@ void emit_expr(Ast *ast)
         // array = {xxx, xxx, xxx}
         if (ast->decl_init->type == AST_ARRAY_INIT)
         {
-            for (int i = 0; i < ast->decl_init->size; i++)
+            int j = 0;
+            for (Iter *i = list_iter(ast->decl_init->array_init); !iter_end(i); j++)
             {
-                emit_expr(ast->decl_init->array_init[i]);
-                emit_lsave(ast->decl_var->ctype->ptr, ast->decl_var->loff, -i);
+                emit_expr(iter_next(i));
+                emit_lsave(get_array_element_ctype(ast->decl_var->ctype), ast->decl_var->loff, -j);
             }
         }
         // array = "xxxx"
@@ -450,11 +462,15 @@ static void emit_data_section()
     if (!globals)
         return;
     emit(".data");
-    for (Ast *p = globals; p; p = p->next)
+    for (Iter *i = list_iter(globals); !iter_end(i);)
     {
-        assert(p->type == AST_STRING);
+        Ast *p = iter_next(i);
         emit_label("%s:", p->slabel);
-        emit(".string \"%s\"", quote(p->sval));
+        if(p->type == AST_STRING){
+            emit(".string \"%s\"", quote(p->sval));
+        }
+        // 目前支持字符串全局变量，TODO 支持其他全局变量
+        else error("only string global data is available");
     }
 }
 
@@ -469,8 +485,9 @@ void print_asm_header(void)
 {
     // 局部变量在栈中的总偏移量
     int off = 0;
-    for (Ast *p = locals; p; p = p->next)
+    for (Iter *i = list_iter(locals); !iter_end(i);)
     {
+        Ast *p = iter_next(i);
         off += ceil8(ctype_size(p->ctype));
         p->loff = off;
     }

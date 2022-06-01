@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-05-20 13:31:01
+ * @LastEditTime: 2022-06-01 19:08:12
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -11,6 +11,7 @@
 #define QCC_H
 
 #include <stdbool.h>
+#include "list.h"
 
 // ============================ Token ================================
 enum
@@ -86,7 +87,6 @@ typedef struct Ast
     int type;
     // 抽象语法树的C类型
     Ctype *ctype;
-    struct Ast *next;
     // 匿名联合，对应不同AST类型
     union
     {
@@ -132,8 +132,7 @@ typedef struct Ast
         struct
         {
             char *fname;
-            int nargs;
-            struct Ast **args;
+            struct List *args;
         };
         // Declaration
         struct
@@ -144,10 +143,8 @@ typedef struct Ast
         // Array Initializer
         struct
         {
-            // 数组中元素个数
-            int size;
             // 大括号{}中 对数组进行初始化的 ast指针数组
-            struct Ast **array_init;
+            struct List *array_init;
         };
     };
 } Ast;
@@ -196,8 +193,8 @@ extern void print_asm_header(void);
 
 extern Ast *parse_decl_or_stmt(void);
 
-extern Ast *globals;
-extern Ast *locals;
+extern List *globals;
+extern List *locals;
 extern Ctype *ctype_int;
 extern Ctype *ctype_char;
 

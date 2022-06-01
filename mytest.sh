@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-01 16:42:44
+ # @LastEditTime: 2022-06-01 20:41:36
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -138,7 +138,10 @@ test 32 'int a[2][3];int *p=a+1;*p=1;int *q=a;*p=32;*(q+3);'
 test 62 'int a[4][5];int *p=a;*(*(a+1)+2)=62;*(p+7);'
 test '1 2 3 0' 'int a[3]={1,2,3};printf("%d %d %d ",a[0],a[1],a[2]);0;'
 test '1 2 0' 'int a[2][3];a[0][1]=1;a[1][1]=2;int *p=a;printf("%d %d ",p[1],p[4]);0;'
-test 7 'int a[1][2]; a[0 * 0][1 + 2 - 2] = 2; a[0][1] + 5;'
+test 7 'int a[1][2]; a[0 * 0][1 + 2 - 2] = 2; a[0][0] = 5 ;a[0][1] + a[0][0];'
+test 122 'char s[]="xyz";char *c=s+2;*c;'
+test 65 'char s[]="xyz";*s=65;*s;'
+test 4 'int a[2][3] = {0, 1, 2, 3, 4, 5}; a[1][1];'
 
 # Type Cast
 test 0 'char a = 256;a;'

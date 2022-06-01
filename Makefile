@@ -1,5 +1,5 @@
 CFLAGS=-g
-OBJS=lex.o string.o util.o parser.o gen.o
+OBJS=lex.o string.o util.o parser.o gen.o list.o
 
 $(OBJS) unittest.o main.o: qcc.h
 

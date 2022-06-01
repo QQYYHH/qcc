@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-01 16:43:43
+ * @LastEditTime: 2022-06-01 20:43:00
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -29,6 +29,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] support multi-array
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
+- [x] add list structure
 
 ## issue
 - 没有测试 局部变量和全局变量运算及其赋值
@@ -38,6 +39,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面
 - a[1] = 1 这种赋值方式已经支持
 - 支持 使用表达式定义数组大小
+- 修复多维数组初始化赋值的bug: a[2][3] = {0, 1, 2, 3,4 ,5}
 
 ## insight
 解析数组元素分成两个核心步骤，比如a[2]，解析为*(a + 2)：

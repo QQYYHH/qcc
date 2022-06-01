@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-06-01 16:35:32
+ * @LastEditTime: 2022-06-01 20:07:03
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -20,25 +20,24 @@
 int main(int argc, char **argv)
 {
     int want_ast_tree = (argc > 1 && !strcmp("-p", argv[1]));
-    Ast *exprs[EXPR_LEN];
-    int i;
-    for (i = 0; i < EXPR_LEN; i++)
+    List *exprs = make_list();
+    for (int i = 0; i < EXPR_LEN; i++)
     {
         Ast *ast = parse_decl_or_stmt();
         if (!ast)
             break;
-        exprs[i] = ast;
+        list_append(exprs, ast);
     }
-    int nexpr = i;
     if (!want_ast_tree)
         print_asm_header();
 
-    for (i = 0; i < nexpr; i++)
+    for (Iter *i = list_iter(exprs); !iter_end(i);)
     {
+        Ast *ast = iter_next(i);
         if (want_ast_tree)
-            printf("%s", ast_to_string(exprs[i]));
+            printf("%s", ast_to_string(ast));
         else
-            emit_expr(exprs[i]);
+            emit_expr(ast);
     }
     if (!want_ast_tree)
     {

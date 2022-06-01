@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-05-20 13:32:40
+ * @LastEditTime: 2022-05-22 00:36:11
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -218,7 +218,7 @@ static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
 {
     /* 确保左子树是指针 or 数组类型 */
     assert(left->ctype->type == CTYPE_PTR || left->ctype->type == CTYPE_ARRAY);
-    /* 如果左右子树都是指针类型 */
+    /* 如果左右子树都是指针类型 这个逻辑后续再理一理*/
     if (right->ctype->type == CTYPE_PTR)
     {
         /* 确保指针指向的类型一致 */
@@ -240,11 +240,10 @@ static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
     emit_expr(left);
     emit("push %%rax");
     emit_expr(right);
-    /* 根据指针指向的类型，计算偏移量 */
-    int sft = ctype_shift(left->ctype->ptr);
-    if (sft > 0)
-        /* sal 有符号左移动 */
-        emit("sal $%d, %%rax", sft);
+    /* 根据指针指向的类型，计算指针运算的单位大小 */
+    int sz = ctype_size(left->ctype->ptr);
+    if(sz > 1)
+        emit("imul $%d, %%rax", sz);
     char *s = "add";
     if (op == '-')
         s = "sub";
@@ -417,8 +416,6 @@ void emit_expr(Ast *ast)
         emit("lea -%d(%%rbp), %%rax", ast->operand->loff);
         break;
     case AST_DEREF:
-        /* 保证操作数是指针 */
-        assert(ast->operand->ctype->type == CTYPE_PTR);
         emit_expr(ast->operand);
         /* 访存，将值赋予rax */
         char *reg;
@@ -436,9 +433,12 @@ void emit_expr(Ast *ast)
         default:
             error("interal error");
         }
-        emit("xor %%rbx, %%rbx");
-        emit("mov (%%rax), %%%s", reg);
-        emit("mov %%rbx, %%rax");
+        if(ast->operand->ctype->ptr->type != CTYPE_ARRAY){
+            emit("xor %%rbx, %%rbx");
+            emit("mov (%%rax), %%%s", reg);
+            emit("mov %%rbx, %%rax");
+        }
+        
         break;
     default:
         // 其他情况， 解析二元运算树

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-05-20 13:26:47
+ * @LastEditTime: 2022-05-22 00:53:45
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -55,14 +55,12 @@ static Ast *make_ast_binop(int type, Ast *left, Ast *right)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = type;
-    Ctype *convert_l = convert_array(left->ctype);
-    Ctype *convert_r = convert_array(right->ctype);
-    r->ctype = result_type(type, convert_l, convert_r);
+    r->ctype = result_type(type, left->ctype, right->ctype);
     // 指针运算，确保左子树是指针类型，方便后续操作
     // 但会影响 减法 操作，TODO fix
     if(type != '=' && 
-        convert_l->type != CTYPE_PTR && 
-        convert_r->type == CTYPE_PTR)
+        convert_array(left->ctype)->type != CTYPE_PTR && 
+        convert_array(right->ctype)->type == CTYPE_PTR)
     {
         r->left = right;
         r->right = left;
@@ -390,7 +388,7 @@ static Ctype *result_type(char op, Ctype *a, Ctype *b)
 {
     jmp_buf jmpbuf;
     if (setjmp(jmpbuf) == 0)
-        return result_type_int(&jmpbuf, op, a, b);
+        return result_type_int(&jmpbuf, op, convert_array(a), convert_array(b));
     error("incompatible operands: %c: <%s> and <%s>",
           op, ctype_to_string(a), ctype_to_string(b));
 }
@@ -412,7 +410,7 @@ static void ensure_lvalue(Ast *ast)
     }
 }
 
-// 仅将数组类型转换为指针类型，方便后续操作，其它类型的ast则直接返回
+// 仅将数组类型转换为指针类型，方便后续一些判断，其它类型的ast则直接返回
 static Ctype *convert_array(Ctype *ctype)
 {
     if(ctype->type != CTYPE_ARRAY) return ctype;
@@ -420,8 +418,45 @@ static Ctype *convert_array(Ctype *ctype)
 }
 
 /**
+ * @brief 解析数组元素 a[xx][xx]...
+ * 数组元素 ==> 指针运算 + 解引用
+ * @param array 数组变量
+ */
+static Ast *parse_array_expr(Ast *array){
+    Ast *idx = parse_expr(0); // 数组下标
+    expect(']');
+    /* 指针运算 */
+    Ast *r = make_ast_binop('+', array, idx);
+    /* 解引用 */
+    return make_ast_uop(AST_DEREF, r->ctype->ptr, r);
+}
+
+/**
+ * @brief 处理变量有后缀的情况
+ * 例如 a++; a--; a[32]等
+ * suffix_expr := INC | DEC | Array
+ * 支持多维数组解析
+ * TODO ++ -- 的支持
+ */
+static Ast *parse_suffix_expr(){
+    Ast *ast = parse_prim();
+    Token *tok;
+    for(;;){
+        tok = read_token();
+        if(!tok) break;;
+        /* 目前只支持解析数组后缀 */
+        if(is_punct(tok, '[')) ast = parse_array_expr(ast);
+        else{
+            unget_token(tok);
+            break;
+        }
+    }
+    return ast;
+}
+
+/**
  * unary_expr := &|* unary_expr
- * unary_expr := prim | ( expr )
+ * unary_expr := prim | ( expr ) | array[xx]
  */
 static Ast *parse_unary_expr(void)
 {
@@ -431,6 +466,8 @@ static Ast *parse_unary_expr(void)
         expect(')');
         return r;
     }
+    /* 下面处理变量有前缀符号的情况，比如 & * 等 */
+
     // 取地址，也可以对指针变量取地址
     // 不支持多重& 例如 &&&a，因为没有意义，对地址取地址？？？
     if (is_punct(tok, '&'))
@@ -451,7 +488,8 @@ static Ast *parse_unary_expr(void)
         return make_ast_uop(AST_DEREF, operand->ctype->ptr, operand);
     }
     unget_token(tok);
-    return parse_prim();
+    /* 前缀解析完，开始解析后缀 */
+    return parse_suffix_expr();
 }
 
 /**
@@ -600,7 +638,7 @@ static Ctype *parse_decl_var(){
  * @param ctype 数组元素的类型
  * @return 如果不是数组类型，直接返回原类型，否则返回数组类型
  */
-static Ctype *parse_maybe_array(Ctype *ctype){
+static Ctype *parse_maybe_array_ctype(Ctype *ctype){
     Token *tok = read_token();
     if(!is_punct(tok, '[')){
         unget_token(tok);
@@ -616,7 +654,7 @@ static Ctype *parse_maybe_array(Ctype *ctype){
         dim = size->ival;
     }
     expect(']');
-    Ctype *sub = parse_maybe_array(ctype);
+    Ctype *sub = parse_maybe_array_ctype(ctype);
     /* 不是最后一维 且 当前维和下一维都没有大小，则报错 */
     if(sub->type == CTYPE_ARRAY && dim == -1 && sub->size == -1)
         error("Array size is not specified");
@@ -636,7 +674,7 @@ static Ast *parse_decl()
     if (varname->type != TTYPE_IDENT)
         error("Identifier expected, but got %s", token_to_string(varname));
     /* 继续解析，尝试数组类型 */
-    ctype = parse_maybe_array(ctype);
+    ctype = parse_maybe_array_ctype(ctype);
     Ast *var = make_ast_lvar(ctype, varname->sval);
 
     Token *tok = read_token();

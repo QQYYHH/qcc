@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-05-20 13:37:28
+ # @LastEditTime: 2022-06-01 13:30:11
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -65,7 +65,7 @@ function testfail {
 # -s 不输出执行过的命令，silence模式
 # make -s qcc
 make qcc
-# Parser
+Parser
 testast '1' '1;'
 testast '(+ (- (+ 1 2) 3) 4)' '1+2-3+4;'
 testast '(+ (+ 1 (* 2 3)) 4)' '1+2*3+4;'
@@ -101,6 +101,9 @@ test 4 '4/2+6/3;'
 test 3 '24/2/4;'
 test 98 "'a'+1;"
 test 2 '1;2;'
+# add brackets ( )
+test 9 '(1 + 2) * 3;'
+
 # Declaration
 test 1 "int a = 1;"
 test 3 "int a = 1; int b = a + 2;"
@@ -125,6 +128,9 @@ test 98 'char *c="ab"+1;*c;'
 test 'pointer difference is: 1777' 'int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 test 99 'char s[4]="abc";char *c=s+2;*c;'
 
+# Array
+test 1 'int a[3]={20, 30, 40}; *(a + 1) = 1;a[1];'
+
 # Type Cast
 test 0 'char a = 256;a;'
 
@@ -138,8 +144,8 @@ testfail '&&a;'
 
 echo "All tests passed"
 make clean
-test 30 'int a[3]={20, 30, 40}; *a + 1 = 1;a[1];'
-# s='int a[2]={55,67};int *b=a+1;*b;'
+
+# s='int a[2][3] = {1, 2, 3, 4};'
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 # echo "$s" | ./qcc
 # compile "$s"

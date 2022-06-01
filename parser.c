@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-01 16:14:22
+ * @LastEditTime: 2022-06-01 16:41:38
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -570,8 +570,13 @@ static Ast *parse_decl_array_init(Ctype *ctype)
     // 其它数组
     if (!is_punct(tok, '{'))
         error("Expected an initializer list, but got %s", token_to_string(tok));
-    Ast **init = malloc(sizeof(Ast *) * ctype->size);
-    for (int i = 0; ; i++)
+    Ast **init;
+    if(ctype->size == -1) // 如果没有定义大小，预先申请大小为10的空间
+        init = malloc(sizeof(Ast *) * 10);
+    else
+        init = malloc(sizeof(Ast *) * ctype->size);
+    int i = 0;
+    for (i = 0; ; i++)
     {
         tok = read_token();
         if(is_punct(tok, '}')) break;
@@ -584,7 +589,7 @@ static Ast *parse_decl_array_init(Ctype *ctype)
         /* whether , or } */
         if(!is_punct(tok, ',')) unget_token(tok);
     }
-    return make_ast_array_init(ctype->size, init);
+    return make_ast_array_init(i, init);
 }
 
 static void check_intexp(Ast *ast) {
@@ -607,8 +612,10 @@ static Ast *parse_decl_init_value(Ast *var)
     if (var->ctype->type == CTYPE_ARRAY)
     {
         init = parse_decl_array_init(var->ctype);
-        // 暂时不检查数组的长度
-       
+        int len = (init->type == AST_STRING)? strlen(init->sval) + 1: init->size;
+        if(var->ctype->size == -1){
+            var->ctype->size = len;
+        }
         return init;
     }
     return parse_expr(0);

@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-01 16:15:50
+ * @LastEditTime: 2022-06-01 16:43:43
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -25,8 +25,8 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] add pointer, unary operator
 - [x] pointer arithmetic
 - [x] add array
-- [ ] array arithmetic
-- [ ] support multi-array
+- [x] array arithmetic
+- [x] support multi-array
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
 

@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-01 16:19:50
+ # @LastEditTime: 2022-06-01 16:42:44
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -108,9 +108,11 @@ test 9 '(1 + 2) * 3;'
 test 1 "int a = 1;"
 test 3 "int a = 1; int b = a + 2;"
 test 10 'int a = 1 ; int  b = a * 2 + 2 / 3 ; int c=2 * a+b;c * 2 + 5 / 2;'
-test 55 'int a[1]={55};int *b=a;*b;'
-test 67 'int a[2]={55,67};int *b=a+1;*b;'
-test 30 'int a[3]={20,30,40};int *b=a+1;*b;'
+test 55 'int a[]={55};int *b=a;*b;'
+test 67 'int a[]={55,67};int *b=a+1;*b;'
+test 30 'int a[]={20,30,40};int *b=a+1;*b;'
+test 20 'int a[]={20,30,40};*a;'
+
 # Function Call
 test 21 "int a = 1; int b = a + 1; int c = b + 1; int d = c + 1; int e = d + 1; int f = e  +1; sum6(a,b,c,d,e,f);"
 testfail "sum2(1, 2,);"
@@ -151,6 +153,7 @@ testfail '&&a;'
 
 echo "All tests passed"
 make clean
+
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 # echo "$s" | ./qcc
 # compile "$s"

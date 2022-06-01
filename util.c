@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-26 15:53:58
- * @LastEditTime: 2022-05-20 13:32:46
+ * @LastEditTime: 2022-06-01 16:09:21
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/util.c
@@ -57,4 +57,21 @@ char *quote(char *p)
         p++;
     }
     return get_cstring(s);
+}
+
+// 模拟执行抽象语法树，得到最终的运算结果
+int emulate_cal(Ast *ast){
+  assert(ast->ctype->type == CTYPE_INT);
+  if(ast->type == AST_LITERAL) return ast->ival;
+  int left = emulate_cal(ast->left);
+  int right = emulate_cal(ast->right);
+  int ans = 0;
+  switch(ast->type){
+    case '+': ans = left + right; break;
+    case '-': ans = left - right; break;
+    case '*': ans = left * right; break;
+    case '/': ans = (int)left / right; break;
+    default: error("invalid operator '%c'", ast->type);
+  }
+  return ans;
 }

@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-01 13:29:17
+ * @LastEditTime: 2022-06-01 16:15:50
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -36,4 +36,10 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 
 ## bug fix
 - 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面
-- a[1] = 1 这种赋值方式暂时还不支持
+- a[1] = 1 这种赋值方式已经支持
+- 支持 使用表达式定义数组大小
+
+## insight
+解析数组元素分成两个核心步骤，比如a[2]，解析为*(a + 2)：
+- 指针运算
+- 解引用

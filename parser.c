@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-05-22 00:53:45
+ * @LastEditTime: 2022-06-01 16:14:22
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -23,6 +23,9 @@ Ast *locals = NULL;
 // int, char 类型
 Ctype *ctype_int = &(Ctype){CTYPE_INT, NULL};
 Ctype *ctype_char = &(Ctype){CTYPE_CHAR, NULL};
+
+// 模拟执行抽象语法树，得到最终的运算结果
+extern int emulate_cal(Ast *);
 
 // 控制全局变量的标签序号
 static int labelseq = 0;
@@ -190,7 +193,7 @@ static Ast *make_ast_array_init(int size, Ast **array_init)
 
 /**
  * @brief 创建数组类型
- * @param ele_ctype 数组元素的类
+ * @param ele_ctype 数组元素的类型
  */
 static Ctype *make_array_type(Ctype *elm_ctype, int size)
 {
@@ -443,7 +446,7 @@ static Ast *parse_suffix_expr(){
     Token *tok;
     for(;;){
         tok = read_token();
-        if(!tok) break;;
+        if(!tok) break;
         /* 目前只支持解析数组后缀 */
         if(is_punct(tok, '[')) ast = parse_array_expr(ast);
         else{
@@ -575,7 +578,7 @@ static Ast *parse_decl_array_init(Ctype *ctype)
         unget_token(tok);
         init[i] = parse_expr(0);
         if(!init[i]) error("Unexpected terminate");
-        // 保证初始化元素类型 和 数组类型兼容
+        // 保证初始化元素类型 和 数组元素类型兼容
         result_type('=', init[i]->ctype, ctype->ptr);
         tok = read_token();
         /* whether , or } */
@@ -585,8 +588,10 @@ static Ast *parse_decl_array_init(Ctype *ctype)
 }
 
 static void check_intexp(Ast *ast) {
-  if (ast->type != AST_LITERAL || ast->ctype->type != CTYPE_INT)
-    error("Integer expected, but got %s", ast_to_string(ast));
+//   if (ast->type != AST_LITERAL || ast->ctype->type != CTYPE_INT)
+//     error("Integer expected, but got %s", ast_to_string(ast));
+    if(ast->ctype->type != CTYPE_INT)
+        error("Integer expected, but got %s", ast_to_string(ast));
 }
 
 /**
@@ -609,29 +614,6 @@ static Ast *parse_decl_init_value(Ast *var)
     return parse_expr(0);
 }
 
-/**
- * @brief 解析decl语句的前半段，即变量类型 和 变量名
- * decl_var := ctype var
- * for example： int a
- * @return declared variable type
- */
-static Ctype *parse_decl_var(){
-    Token *tok = read_token();
-    Ctype *ctype = get_ctype(tok);
-    if (!ctype)
-        error("Type expected, but got %s", token_to_string(tok));
-    /* Maybe pointer ctype */
-    for(;;){
-        tok = read_token();
-        if(!tok) error("Unexpected terminated..");
-        if(!is_punct(tok, '*')){
-            unget_token(tok);
-            break;
-        }
-        ctype = make_ptr_type(ctype);
-    }
-    return ctype;
-}
 
 /**
  * @brief 尝试解析数组类型的变量，支持多维数组
@@ -649,9 +631,9 @@ static Ctype *parse_maybe_array_ctype(Ctype *ctype){
     if(!is_punct(tok, ']')){
         Ast *size = parse_expr(0);
         // 保证size必须是整数字面量
-        // TODO 支持表达式类型的size
         check_intexp(size);
-        dim = size->ival;
+        // dim = size->ival;
+        dim = emulate_cal(size);
     }
     expect(']');
     Ctype *sub = parse_maybe_array_ctype(ctype);
@@ -662,20 +644,45 @@ static Ctype *parse_maybe_array_ctype(Ctype *ctype){
 }
 
 /**
- * 声明 declaration
- * with init value    ->   decl := ctype identifer = decl_init; 
- * without init value ->   decl := ctype identifier; 
- * TODO 逗号分隔变量的声明 比如 int a = 1, b = 2;
+ * @brief 解析decl语句的前半段，即变量类型 和 变量名
+ * decl_var := ctype var
+ * for example: int a
+ * for example: int *a[100]
+ * @return declared variable type
  */
-static Ast *parse_decl()
-{
-    Ctype *ctype = parse_decl_var();
+static Ast *parse_decl_var(){
+    Token *tok = read_token();
+    Ctype *ctype = get_ctype(tok);
+    if (!ctype)
+        error("Type expected, but got %s", token_to_string(tok));
+    /* Maybe pointer ctype */
+    for(;;){
+        tok = read_token();
+        if(!tok) error("Unexpected terminated..");
+        if(!is_punct(tok, '*')){
+            unget_token(tok);
+            break;
+        }
+        ctype = make_ptr_type(ctype);
+    }
     Token *varname = read_token();
     if (varname->type != TTYPE_IDENT)
         error("Identifier expected, but got %s", token_to_string(varname));
     /* 继续解析，尝试数组类型 */
     ctype = parse_maybe_array_ctype(ctype);
     Ast *var = make_ast_lvar(ctype, varname->sval);
+    return var;
+}
+
+/**
+ * 声明 declaration
+ * with init value    ->   decl := ctype identifer = decl_init; 
+ * without init value ->   decl := ctype identifier; 
+ * TODO 逗号分隔变量的声明 比如 int a = 1, b = 2;
+ */
+static Ast *parse_decl()
+{  
+    Ast *var = parse_decl_var();
 
     Token *tok = read_token();
     Ast *init = NULL;

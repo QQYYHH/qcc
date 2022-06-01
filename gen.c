@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-05-22 00:36:11
+ * @LastEditTime: 2022-06-01 15:46:49
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -93,7 +93,7 @@ static void emit_gload(Ctype *ctype, char *label)
 }
 
 /**
- * @brief 局部数据加载，如果是数组，则仅加载数组元素首地址
+ * @brief 局部数据加载，如果是数组，则仅加载数组首地址
  * @param ctype 要加载的数据类型
  * @param loff 要加载局部变量在栈中相对于rbp的偏移量
  * stack --> rax
@@ -158,7 +158,7 @@ static void emit_gsave(Ctype *ctype, char *label)
  * 将局部变量存放在栈中
  * @param ctype 要保存的数据类型
  * @param loff 数据要保存在栈的基址
- * @param off 相对于基址偏移量
+ * @param off 相对于栈基址偏移量，以ctype类型对应的大小为单位
  * rax --> stack
  */
 static void emit_lsave(Ctype *ctype, int loff, int off)
@@ -184,6 +184,7 @@ static void emit_lsave(Ctype *ctype, int loff, int off)
  * @brief 给解引用变量赋值
  * 例如：*a = 1
  * 此时要赋的值已经在rax中
+ * @param var 解引用变量的抽象语法树，比如*a
  */
 static void emit_assign_deref(Ast *var)
 {
@@ -218,7 +219,7 @@ static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
 {
     /* 确保左子树是指针 or 数组类型 */
     assert(left->ctype->type == CTYPE_PTR || left->ctype->type == CTYPE_ARRAY);
-    /* 如果左右子树都是指针类型 这个逻辑后续再理一理*/
+    /* 如果左右子树都是指针类型 这个逻辑后续再理一理 */
     if (right->ctype->type == CTYPE_PTR)
     {
         /* 确保指针指向的类型一致 */
@@ -427,11 +428,9 @@ void emit_expr(Ast *ast)
         case 4:
             reg = "ebx";
             break;
-        case 8:
+        default:
             reg = "rbx";
             break;
-        default:
-            error("interal error");
         }
         if(ast->operand->ctype->ptr->type != CTYPE_ARRAY){
             emit("xor %%rbx, %%rbx");

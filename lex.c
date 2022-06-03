@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-05-06 13:53:44
+ * @LastEditTime: 2022-06-03 15:51:27
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
 #include "qcc.h"
 
 #define BUFLEN 256
@@ -297,6 +298,11 @@ bool is_punct(Token *tok, char c)
     if (!tok)
         error("Token is null");
     return tok->type == TTYPE_PUNCT && tok->punct == c;
+}
+
+bool is_ident(Token *tok, char *s){
+    if(!tok) error("Unexpected terminate when determine whether a token is identifier");
+    return tok->type == TTYPE_IDENT && !strcmp(tok->sval, s);
 }
 
 // 将token 回退到 大小为1 的Token缓冲区

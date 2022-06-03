@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-01 20:41:36
+ # @LastEditTime: 2022-06-03 16:47:15
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -88,6 +88,10 @@ testast '(decl char* s "abc")' 'char *s="abc";'
 testast '(decl [4]char s "abc")' 'char s[4]="abc";'
 testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
 
+# IF
+testast '(if 1 {2;})' 'if(1){2;}'
+testast '(if 1 {2;} {3;})' 'if(1){2;}else{3;}'
+
 # Expression
 # Basic arithmetic
 test 5 "1+2 * 3 - 4 / 2;"
@@ -143,6 +147,17 @@ test 122 'char s[]="xyz";char *c=s+2;*c;'
 test 65 'char s[]="xyz";*s=65;*s;'
 test 4 'int a[2][3] = {0, 1, 2, 3, 4, 5}; a[1][1];'
 
+# IF
+test 'a1' 'if(1){printf("a");}1;'
+test '1' 'if(0){printf("a");}1;'
+test 'x1' 'if(1){printf("x");}else{printf("y");}1;'
+test 'y1' 'if(0){printf("x");}else{printf("y");}1;'
+test 'a1' 'if(1)printf("a");1;'
+test '1' 'if(0)printf("a");1;'
+test 'x1' 'if(1)printf("x");else printf("y");1;'
+test 'y1' 'if(0)printf("x");else printf("y");1;'
+test 1 '{{{{{{{{{{1;}}}}}}}}}}'
+
 # Type Cast
 test 0 'char a = 256;a;'
 
@@ -156,6 +171,8 @@ testfail '&&a;'
 
 echo "All tests passed"
 make clean
+
+
 
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 # echo "$s" | ./qcc

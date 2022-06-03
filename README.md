@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-01 20:43:00
+ * @LastEditTime: 2022-06-03 16:50:26
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -30,6 +30,10 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
 - [x] add list structure
+- [ ] add compare calculation
+- [x] add if
+- [ ] add for 
+- [ ] add func definition and return
 
 ## issue
 - 没有测试 局部变量和全局变量运算及其赋值

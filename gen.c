@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-01 20:38:18
+ * @LastEditTime: 2022-06-03 16:28:59
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -449,7 +449,30 @@ void emit_expr(Ast *ast)
             emit("mov (%%rax), %%%s", reg);
             emit("mov %%rbx, %%rax");
         }
-        
+        break;
+    case AST_IF:
+        emit_expr(ast->cond);
+        char *ne = make_next_label();
+        emit("test %%rax, %%rax");
+        emit("je %s", ne);
+        emit_expr(ast->then);
+        if(ast->els){ // exist else clause
+            char *end = make_next_label();
+            emit("jmp %s", end);
+            // 下面开始时执行 else的部分
+            emit_label("%s:", ne);
+            emit_expr(ast->els);
+            // 执行完else 之后，打上end标签
+            emit_label("%s:", end);
+        }else{
+            emit_label("%s:", ne);
+        }
+        break;
+    
+    case AST_COMPOUND_STMT:
+        for(Iter *i = list_iter(ast->stmts);!iter_end(i); ){
+            emit_expr(iter_next(i));
+        }
         break;
     default:
         // 其他情况， 解析二元运算树

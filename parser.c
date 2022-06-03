@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-01 20:06:37
+ * @LastEditTime: 2022-06-03 15:59:17
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -30,7 +30,10 @@ extern int emulate_cal(Ast *);
 // 控制全局变量的标签序号
 static int labelseq = 0;
 
+Ast *parse_decl_or_stmt();
 static Ast *parse_expr(int prev_priority);
+static Ast *parse_compound_stmts();
+static Ast *parse_stmt();
 static Ctype *make_ptr_type(Ctype *ctype);
 static Ctype *make_array_type(Ctype *ctype, int size);
 static Ctype *result_type(char op, Ctype *a, Ctype *b);
@@ -149,6 +152,24 @@ static Ast *make_ast_decl(Ast *var, Ast *init)
     r->ctype = NULL;
     r->decl_var = var;
     r->decl_init = init;
+    return r;
+}
+
+static Ast *make_compound_stmt(List *stmts){
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_COMPOUND_STMT;
+    r->ctype = NULL;
+    r->stmts = stmts;
+    return r;
+}
+
+static Ast *make_if_stmt(Ast *cond, Ast *then, Ast *els){
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_IF;
+    r->ctype = NULL;
+    r->cond = cond;
+    r->then = then;
+    r->els = els;
     return r;
 }
 
@@ -674,8 +695,40 @@ static Ast *parse_decl()
 }
 
 /**
+ * @brief if_stmt := if ( cond ) then stmt els stmt
+ * if_stmt := if( cond ) then stmt
+ */
+static Ast *parse_if_stmt(){
+    expect('(');
+    Ast *cond = parse_expr(0);
+    expect(')');
+    Ast *then = parse_stmt();
+    Token *tok = read_token();
+    if(!tok || !is_ident(tok, "else")){
+        unget_token(tok);
+        return make_if_stmt(cond, then, NULL);
+    }
+    return make_if_stmt(cond, then, parse_stmt());
+}
+
+/**
+ * @brief parse statement
+ * stmt := if | for | { block }
+ */
+static Ast *parse_stmt()
+{
+    Token *tok = read_token();
+    if(is_ident(tok, "if")) return parse_if_stmt();
+    if(is_punct(tok, '{')) return parse_compound_stmts();
+    unget_token(tok);
+    Ast *r = parse_expr(0);
+    expect(';');
+    return r;
+}
+
+/**
  * decl or stmt
- * 目前来讲，stmt就是表达式
+ * stmt就是if, for, return 等语句 或者是多条stmt构成的block
  */
 Ast *parse_decl_or_stmt()
 {
@@ -683,10 +736,26 @@ Ast *parse_decl_or_stmt()
     Token *tok = peek_token();
     if (!tok)
         return NULL;
-    Ast *ast = is_type_keyword(tok) ? parse_decl() : parse_expr(0);
-    if(ast->type != AST_DECL)
-        expect(';');
-    return ast;
+    return is_type_keyword(tok) ? parse_decl() : parse_stmt();
+}
+
+/**
+ * @brief parse statements in one block
+ * surrounded by {}
+ * compound_stmts := { decl_or_stmt1, decl_or_stmt2, ... }
+ */
+static Ast *parse_compound_stmts()
+{
+    List *list = make_list();
+    for(;;){
+        Ast *stmt = parse_decl_or_stmt();
+        if(!stmt) error('expected }');
+        list_append(list, stmt);
+        Token *tok = read_token();
+        if(is_punct(tok, '}')) break;
+        unget_token(tok);
+    }
+    return make_compound_stmt(list);
 }
 
 char *ctype_to_string(Ctype *ctype)
@@ -771,6 +840,22 @@ static void ast_to_string_int(Ast *ast, String *buf)
             ast_to_string_int(iter_next(i), buf);
             if (!iter_end(i))
                 string_appendf(buf, ",");
+        }
+        string_appendf(buf, "}");
+        break;
+    case AST_IF:
+        string_appendf(buf, "(if %s %s",
+                     ast_to_string(ast->cond),
+                     ast_to_string(ast->then));
+        if (ast->els)
+            string_appendf(buf, " %s", ast_to_string(ast->els));
+            string_appendf(buf, ")");
+        break;
+    case AST_COMPOUND_STMT:
+        string_appendf(buf, "{");
+        for (Iter *i = list_iter(ast->stmts); !iter_end(i);) {
+            ast_to_string_int(iter_next(i), buf);
+            string_appendf(buf, ";");
         }
         string_appendf(buf, "}");
         break;

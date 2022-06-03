@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-06-01 19:08:12
+ * @LastEditTime: 2022-06-03 16:06:23
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -57,6 +57,8 @@ enum
     AST_ARRAY_INIT, // 数组初始化
     AST_ADDR,       // 代表 & 单目运算
     AST_DEREF,      // 代表 * 单目运算
+    AST_IF, 
+    AST_COMPOUND_STMT, // compound stmts
 };
 
 // 不同的C类型
@@ -146,6 +148,15 @@ typedef struct Ast
             // 大括号{}中 对数组进行初始化的 ast指针数组
             struct List *array_init;
         };
+        // if statement
+        struct
+        {
+            struct Ast *cond;
+            struct Ast *then;
+            struct Ast *els;
+        };
+        /* compound statements(statements in one function or block) */ 
+        struct List *stmts;
     };
 } Ast;
 
@@ -180,11 +191,13 @@ extern void string_appendf(String *s, char *fmt, ...);
 
 extern char *token_to_string(Token *tok);
 extern bool is_punct(Token *tok, char c);
+extern bool is_ident(Token *tok, char *s);
 extern void unget_token(Token *tok);
 extern Token *peek_token(void);
 extern Token *read_token(void);
 
 extern char *quote(char *);
+extern char *make_next_label(void);
 
 extern void emit_expr(Ast *ast);
 extern char *ast_to_string(Ast *ast);

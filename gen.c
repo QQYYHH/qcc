@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-03 16:28:59
+ * @LastEditTime: 2022-06-04 12:52:06
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -468,7 +468,22 @@ void emit_expr(Ast *ast)
             emit_label("%s:", ne);
         }
         break;
-    
+    case AST_FOR:
+        if(ast->forinit) emit_expr(ast->forinit);
+        char *begin = make_next_label();
+        char *end = make_next_label();
+        emit_label("%s:", begin);
+        if(ast->forcond){
+            emit_expr(ast->forcond);
+            emit("test %%rax, %%rax");
+            emit("je %s", end);
+        }
+        emit_expr(ast->forbody);
+        if(ast->forstep) emit_expr(ast->forstep);
+        emit("jmp %s", begin);
+        emit_label("%s:", end);
+        break;
+        
     case AST_COMPOUND_STMT:
         for(Iter *i = list_iter(ast->stmts);!iter_end(i); ){
             emit_expr(iter_next(i));

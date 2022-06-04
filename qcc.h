@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-06-03 16:06:23
+ * @LastEditTime: 2022-06-04 11:59:00
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -58,6 +58,7 @@ enum
     AST_ADDR,       // 代表 & 单目运算
     AST_DEREF,      // 代表 * 单目运算
     AST_IF, 
+    AST_FOR, 
     AST_COMPOUND_STMT, // compound stmts
 };
 
@@ -154,6 +155,14 @@ typedef struct Ast
             struct Ast *cond;
             struct Ast *then;
             struct Ast *els;
+        };
+        // for statement
+        struct
+        {
+            struct Ast *forinit;
+            struct Ast *forcond;
+            struct Ast *forstep;
+            struct Ast *forbody;
         };
         /* compound statements(statements in one function or block) */ 
         struct List *stmts;

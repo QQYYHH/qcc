@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-03 15:59:17
+ * @LastEditTime: 2022-06-04 12:52:51
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -155,6 +155,18 @@ static Ast *make_ast_decl(Ast *var, Ast *init)
     return r;
 }
 
+/**
+ * @array_init 大括号{}中数组元素的初始化值
+ */
+static Ast *make_ast_array_init(List *array_init)
+{
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_ARRAY_INIT;
+    r->ctype = NULL;
+    r->array_init = array_init;
+    return r;
+}
+
 static Ast *make_compound_stmt(List *stmts){
     Ast *r = malloc(sizeof(Ast));
     r->type = AST_COMPOUND_STMT;
@@ -173,15 +185,14 @@ static Ast *make_if_stmt(Ast *cond, Ast *then, Ast *els){
     return r;
 }
 
-/**
- * @array_init 大括号{}中数组元素的初始化值
- */
-static Ast *make_ast_array_init(List *array_init)
-{
+static Ast *make_for_stmt(Ast *forinit, Ast *forcond, Ast *forstep, Ast *forbody){
     Ast *r = malloc(sizeof(Ast));
-    r->type = AST_ARRAY_INIT;
+    r->type = AST_FOR;
     r->ctype = NULL;
-    r->array_init = array_init;
+    r->forinit = forinit;
+    r->forcond = forcond;
+    r->forstep = forstep;
+    r->forbody = forbody;
     return r;
 }
 
@@ -306,7 +317,6 @@ static Ast *parse_prim(void)
     switch (tok->type)
     {
     case TTYPE_IDENT:
-        // TODO increase array
         return parse_ident_or_func(tok->sval);
     case TTYPE_INT:
         return make_ast_int(tok->ival);
@@ -712,6 +722,30 @@ static Ast *parse_if_stmt(){
 }
 
 /**
+ * @brief for_stmt := for ( decl_or_stmt; expr; expr ) stmt
+ */
+static Ast *parse_for_stmt(){
+    expect('(');
+    Ast *init = NULL, *cond = NULL, *step = NULL;
+    /* init */
+    Token *tok = read_token();
+    if(!is_punct(tok, ';')){
+        unget_token(tok);
+        init = parse_decl_or_stmt();
+    }
+    /* cond */
+    tok = peek_token();
+    if(!is_punct(tok, ';')) cond = parse_expr(0);
+    expect(';');
+    /* step */
+    tok = peek_token();
+    if(!is_punct(tok, ')')) step = parse_expr(0);
+    expect(')');
+    Ast *body = parse_stmt();
+    return make_for_stmt(init, cond, step, body);
+}
+
+/**
  * @brief parse statement
  * stmt := if | for | { block }
  */
@@ -719,6 +753,7 @@ static Ast *parse_stmt()
 {
     Token *tok = read_token();
     if(is_ident(tok, "if")) return parse_if_stmt();
+    if(is_ident(tok, "for")) return parse_for_stmt();
     if(is_punct(tok, '{')) return parse_compound_stmts();
     unget_token(tok);
     Ast *r = parse_expr(0);
@@ -749,7 +784,7 @@ static Ast *parse_compound_stmts()
     List *list = make_list();
     for(;;){
         Ast *stmt = parse_decl_or_stmt();
-        if(!stmt) error('expected }');
+        if(!stmt) error("expected }");
         list_append(list, stmt);
         Token *tok = read_token();
         if(is_punct(tok, '}')) break;
@@ -850,6 +885,13 @@ static void ast_to_string_int(Ast *ast, String *buf)
         if (ast->els)
             string_appendf(buf, " %s", ast_to_string(ast->els));
             string_appendf(buf, ")");
+        break;
+    case AST_FOR:
+        string_appendf(buf, "(for %s %s %s ",
+                     ast_to_string(ast->forinit),
+                     ast_to_string(ast->forcond),
+                     ast_to_string(ast->forstep));
+        string_appendf(buf, "%s)", ast_to_string(ast->forbody));
         break;
     case AST_COMPOUND_STMT:
         string_appendf(buf, "{");

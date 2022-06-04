@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-03 16:47:15
+ # @LastEditTime: 2022-06-04 13:02:51
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -92,6 +92,9 @@ testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
 testast '(if 1 {2;})' 'if(1){2;}'
 testast '(if 1 {2;} {3;})' 'if(1){2;}else{3;}'
 
+# FOR
+testast '(for (decl int a 1) 3 7 {5;})' 'for(int a=1;3;7){5;}'
+
 # Expression
 # Basic arithmetic
 test 5 "1+2 * 3 - 4 / 2;"
@@ -158,6 +161,9 @@ test 'x1' 'if(1)printf("x");else printf("y");1;'
 test 'y1' 'if(0)printf("x");else printf("y");1;'
 test 1 '{{{{{{{{{{1;}}}}}}}}}}'
 
+# For statement
+test 012340 'for(int i=0; i<5; i=i+1){printf("%d",i);}0;'
+
 # Type Cast
 test 0 'char a = 256;a;'
 
@@ -171,7 +177,6 @@ testfail '&&a;'
 
 echo "All tests passed"
 make clean
-
 
 
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'

@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-06 15:47:57
+ * @LastEditTime: 2022-06-06 16:35:11
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -30,7 +30,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
 - [x] add list structure
-- [ ] add bool and compare calculation such as <, >, >=, <= and == 
+- [x] add bool and compare calculation such as <, > and == , it's easy to extend to >= and <=
 - [x] add ++, --
 - [x] add if
 - [x] add for 

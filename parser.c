@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-06 15:41:19
+ * @LastEditTime: 2022-06-06 16:32:14
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -233,18 +233,20 @@ static Ast *find_var(char *name)
     return NULL;
 }
 
-static int priority(char op)
+static int priority(int op)
 {
     switch (op)
     {
     case '=':
         return 1;
-    case '+':
-    case '-':
+    case PUNCT_EQ:
         return 2;
-    case '*':
-    case '/':
+    case '>': case '<':
         return 3;
+    case '+': case '-':
+        return 4;
+    case '*': case '/':
+        return 5;
     default:
         return -1;
     }
@@ -921,7 +923,9 @@ static void ast_to_string_int(Ast *ast, String *buf)
     default:
         left = ast_to_string(ast->left);
         right = ast_to_string(ast->right);
-        string_appendf(buf, "(%c %s %s)", ast->type, left, right);
+        if(ast->type == PUNCT_EQ)
+            string_appendf(buf, "(%s %s %s)", "==", left, right);
+        else string_appendf(buf, "(%c %s %s)", ast->type, left, right);
     }
 }
 

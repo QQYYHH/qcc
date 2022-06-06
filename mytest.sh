@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-06 15:47:14
+ # @LastEditTime: 2022-06-06 16:34:16
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -92,7 +92,10 @@ testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
 testast '{(decl int a 1);(++ a);}' '{int a=1;a++;}'
 testast '{(decl int a 1);(-- a);}' '{int a=1;a--;}'
 testast '(! 1)' '!1;'
-
+# Comparasion
+testast '(< 1 2)' '1<2;'
+testast '(> 1 2)' '1>2;'
+testast '(== 1 2)' '1==2;'
 # IF
 testast '(if 1 {2;})' 'if(1){2;}'
 testast '(if 1 {2;} {3;})' 'if(1){2;}else{3;}'
@@ -115,6 +118,12 @@ test 98 "'a'+1;"
 test 2 '1;2;'
 # add brackets ( )
 test 9 '(1 + 2) * 3;'
+
+# Comparision
+test 1 '1<2;'
+test 0 '2<1;'
+test 1 '1==1;'
+test 0 '1==2;'
 
 # Declaration
 test 1 "int a = 1;"

@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-06 15:28:16
+ * @LastEditTime: 2022-06-06 16:19:38
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -283,6 +283,20 @@ static void emit_assign(Ast *var)
     }
 }
 
+/** 
+ * @brief 比较运算：>, <, ==
+ * @param ins 指令
+ */
+static void emit_comp(char *inst, Ast *a, Ast *b){
+    emit_expr(a);
+    emit("push %%rax");
+    emit_expr(b); // b -> rax
+    emit("pop %%rcx"); // a -> rcx 
+    emit("cmp %%rax, %%rcx"); // cmp b, a;
+    emit("%s %%al", inst);
+    emit("movzb %%al, %%rax");
+}
+
 /**
  * 二元运算树代码产生
  */
@@ -293,6 +307,10 @@ static void emit_binop(Ast *ast)
     {
         emit_expr(ast->right);
         emit_assign(ast->left);
+        return;
+    }
+    if (ast->type == PUNCT_EQ) {
+        emit_comp("sete", ast->left, ast->right);
         return;
     }
     // 如果二元运算树是指针类型
@@ -306,6 +324,12 @@ static void emit_binop(Ast *ast)
     char *op;
     switch (ast->type)
     {
+    case '<': 
+        emit_comp("setl", ast->left, ast->right);
+        return;
+    case '>':
+        emit_comp("setg", ast->left, ast->right);
+        return;
     case '+':
         op = "add";
         break;

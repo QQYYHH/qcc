@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-06-03 15:51:27
+ * @LastEditTime: 2022-06-06 15:19:32
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -34,7 +34,7 @@ static Token *make_strtok(String *s)
     return r;
 }
 
-static Token *make_punct(char punct)
+static Token *make_punct(int punct)
 {
     Token *r = malloc(sizeof(Token));
     r->type = TTYPE_PUNCT;
@@ -163,6 +163,21 @@ static Token *read_ident(char c)
 }
 
 /**
+ * @brief 读取连续的两个字符，作为一个token
+ * 比如 unary operator ++, --
+ * 比较运算符 ==
+ * @param c1 当前字符
+ * @param expect 期望的下一个字符
+ * @param punct_type 这两个字符构成的punctuation类型
+ */
+static Token *read_repeat(int c1, int expect, int punct_type){
+    int c = getc(stdin);
+    if(c == expect) return make_punct(punct_type);
+    ungetc(c, stdin);
+    return make_punct(c1);
+}
+
+/**
  * Token 读取调度器
  */
 static Token *read_token_dispatcher(void)
@@ -240,10 +255,7 @@ static Token *read_token_dispatcher(void)
     case '_':
         return read_ident(c);
     case '/':
-    case '=':
     case '*':
-    case '+':
-    case '-':
     case '(':
     case ')':
     case ',':
@@ -253,7 +265,11 @@ static Token *read_token_dispatcher(void)
     case ']':
     case '{':
     case '}':
+    case '!':
         return make_punct(c);
+    case '=': return read_repeat('=', '=', PUNCT_EQ);
+    case '+': return read_repeat('+', '+', PUNCT_INC);
+    case '-': return read_repeat('-', '-', PUNCT_DEC);
     case EOF:
         return NULL;
     default:
@@ -293,7 +309,7 @@ char *token_to_string(Token *tok)
 }
 
 // token是否代表某个特殊字符 c
-bool is_punct(Token *tok, char c)
+bool is_punct(Token *tok, int c)
 {
     if (!tok)
         error("Token is null");

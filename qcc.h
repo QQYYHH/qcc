@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-06-04 11:59:00
+ * @LastEditTime: 2022-06-06 15:13:12
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -32,7 +32,7 @@ typedef struct
         int ival;
         char *sval;
         // + - * / ( ) , {} ; 等其它一些特殊符号
-        char punct;
+        int punct;
         char c;
     };
 } Token;
@@ -48,7 +48,8 @@ typedef struct
 // 增加 AST节点类型的枚举定义
 enum
 {
-    AST_LITERAL, // 字面量，包括常量、字符
+    // 定义为128 是为了避免与 ascii字符冲突
+    AST_LITERAL = 128, // 字面量，包括常量、字符
     AST_STRING,
     AST_LVAR, // 局部变量
     AST_GVAR, // 全局变量
@@ -60,6 +61,9 @@ enum
     AST_IF, 
     AST_FOR, 
     AST_COMPOUND_STMT, // compound stmts
+    PUNCT_EQ, // ==
+    PUNCT_INC, // ++
+    PUNCT_DEC, // --
 };
 
 // 不同的C类型
@@ -199,7 +203,7 @@ extern void string_append(String *s, char c);
 extern void string_appendf(String *s, char *fmt, ...);
 
 extern char *token_to_string(Token *tok);
-extern bool is_punct(Token *tok, char c);
+extern bool is_punct(Token *tok, int c);
 extern bool is_ident(Token *tok, char *s);
 extern void unget_token(Token *tok);
 extern Token *peek_token(void);

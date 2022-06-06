@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-04 13:03:48
+ * @LastEditTime: 2022-06-06 15:47:57
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -30,14 +30,16 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [ ] distinguish global/local vars
 - [x] split main into parser.c and gen.c
 - [x] add list structure
-- [ ] add bool and compare calculation
+- [ ] add bool and compare calculation such as <, >, >=, <= and == 
+- [x] add ++, --
 - [x] add if
 - [x] add for 
 - [ ] add func definition and return
+- [ ] support negative number
 
 ## issue
 - 没有测试 局部变量和全局变量运算及其赋值
-- 多维数组 要以多重指针的方式存储
+- x = a++, x = ++a 这两种情况的区分，++运算符的优先级问题
 
 ## bug fix
 - 赋值语句中 `=` 的优先级比较特殊，对于连续的`=`，前面的优先级 < 后面；对于+ - * / 来说，相同符号前面的优先级 > 后面

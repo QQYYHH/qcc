@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-04 13:02:51
+ # @LastEditTime: 2022-06-06 15:47:14
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -88,6 +88,11 @@ testast '(decl char* s "abc")' 'char *s="abc";'
 testast '(decl [4]char s "abc")' 'char s[4]="abc";'
 testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
 
+# Unary Operator
+testast '{(decl int a 1);(++ a);}' '{int a=1;a++;}'
+testast '{(decl int a 1);(-- a);}' '{int a=1;a--;}'
+testast '(! 1)' '!1;'
+
 # IF
 testast '(if 1 {2;})' 'if(1){2;}'
 testast '(if 1 {2;} {3;})' 'if(1){2;}else{3;}'
@@ -161,6 +166,21 @@ test 'x1' 'if(1)printf("x");else printf("y");1;'
 test 'y1' 'if(0)printf("x");else printf("y");1;'
 test 1 '{{{{{{{{{{1;}}}}}}}}}}'
 
+# Increment or decrement
+test 16 'int a=15;a++;'
+test 16 'int a=15;a++;a;'
+test 14 'int a=15;a--;'
+test 14 'int a=15;a--;a;'
+
+
+# Boolean operators
+test 0 '!1;'
+test 1 '!0;'
+test 2 '!15 + 2;'
+test 0 '!(15 + 2);'
+test 1 '!!15;'
+test 1 'int *a[3]; int b = 2; a[0] = &b; !!**a;'
+
 # For statement
 test 012340 'for(int i=0; i<5; i=i+1){printf("%d",i);}0;'
 
@@ -177,7 +197,6 @@ testfail '&&a;'
 
 echo "All tests passed"
 make clean
-
 
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 # echo "$s" | ./qcc

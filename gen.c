@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-04 12:52:06
+ * @LastEditTime: 2022-06-06 15:28:16
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -263,9 +263,9 @@ static void emit_pointer_arithmetic(char op, Ast *left, Ast *right)
     emit("%s %%rbx, %%rax", s);
 }
 
-static void emit_assign(Ast *var, Ast *value)
+// 待赋值的数据已经在rax中
+static void emit_assign(Ast *var)
 {
-    emit_expr(value);
     if(var->type == AST_DEREF){
         emit_assign_deref(var);
         return;
@@ -291,7 +291,8 @@ static void emit_binop(Ast *ast)
     // 如果是赋值语句
     if (ast->type == '=')
     {
-        emit_assign(ast->left, ast->right);
+        emit_expr(ast->right);
+        emit_assign(ast->left);
         return;
     }
     // 如果二元运算树是指针类型
@@ -318,7 +319,7 @@ static void emit_binop(Ast *ast)
         op = "idiv";
         break;
     default:
-        error("invalid operator '%c'", ast->type);
+        error("invalid operator '%d'", ast->type);
     }
     emit_expr(ast->left);
     emit("push %%rax");
@@ -489,6 +490,24 @@ void emit_expr(Ast *ast)
             emit_expr(iter_next(i));
         }
         break;
+    case PUNCT_DEC:
+        emit_expr(ast->operand);
+        emit("dec %%rax");
+        emit_assign(ast->operand);
+        break;
+    case PUNCT_INC:
+        emit_expr(ast->operand);
+        emit("inc %%rax");
+        emit_assign(ast->operand);
+        break;
+    case '!':
+        emit_expr(ast->operand);
+        emit("cmp $0, %%rax");
+        // sete将ZF的值拷贝到 指定寄存器中
+        emit("sete %%al");
+        // movzb有符号扩展拷贝1字节
+        emit("movzb %%al, %%rax");
+        break;
     default:
         // 其他情况， 解析二元运算树
         emit_binop(ast);
@@ -535,6 +554,6 @@ void print_asm_header(void)
            "mymain:\n\t"
            "push %%rbp\n\t"
            "mov %%rsp, %%rbp\n");
-    if (locals)
+    if (locals->len)
         printf("\tsub $%d, %%rsp\n", off);
 }

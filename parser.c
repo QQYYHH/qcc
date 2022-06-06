@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-04 12:52:51
+ * @LastEditTime: 2022-06-06 15:41:19
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -36,16 +36,16 @@ static Ast *parse_compound_stmts();
 static Ast *parse_stmt();
 static Ctype *make_ptr_type(Ctype *ctype);
 static Ctype *make_array_type(Ctype *ctype, int size);
-static Ctype *result_type(char op, Ctype *a, Ctype *b);
+static Ctype *result_type(int op, Ctype *a, Ctype *b);
 static Ctype *convert_array(Ctype *ctype);
-static void expect(char punct);
+static void expect(int punct);
 
 // ============================ make AST ================================
 
 /**
  * 单目运算树
  */
-static Ast *make_ast_uop(char type, Ctype *ctype, Ast *operand)
+static Ast *make_ast_uop(int type, Ctype *ctype, Ast *operand)
 {
     Ast *r = malloc(sizeof(Ast));
     r->type = type;
@@ -389,7 +389,7 @@ err:
     longjmp(*jmpbuf, 1);
 }
 
-static Ctype *result_type(char op, Ctype *a, Ctype *b)
+static Ctype *result_type(int op, Ctype *a, Ctype *b)
 {
     jmp_buf jmpbuf;
     if (setjmp(jmpbuf) == 0)
@@ -441,7 +441,6 @@ static Ast *parse_array_expr(Ast *array){
  * 例如 a++; a--; a[32]等
  * suffix_expr := INC | DEC | Array
  * 支持多维数组解析
- * TODO ++ -- 的支持
  */
 static Ast *parse_suffix_expr(){
     Ast *ast = parse_prim();
@@ -449,8 +448,13 @@ static Ast *parse_suffix_expr(){
     for(;;){
         tok = read_token();
         if(!tok) break;
-        /* 目前只支持解析数组后缀 */
+        /* array */
         if(is_punct(tok, '[')) ast = parse_array_expr(ast);
+        /* a++ or a-- */
+        else if(is_punct(tok, PUNCT_INC) || is_punct(tok, PUNCT_DEC)){
+            ensure_lvalue(ast);
+            return make_ast_uop(tok->punct, ast->ctype, ast);
+        }
         else{
             unget_token(tok);
             break;
@@ -471,8 +475,7 @@ static Ast *parse_unary_expr(void)
         expect(')');
         return r;
     }
-    /* 下面处理变量有前缀符号的情况，比如 & * 等 */
-
+    /* 下面处理变量有前缀符号的情况，比如 & * ++ -- ! 等 */
     // 取地址，也可以对指针变量取地址
     // 不支持多重& 例如 &&&a，因为没有意义，对地址取地址？？？
     if (is_punct(tok, '&'))
@@ -492,8 +495,13 @@ static Ast *parse_unary_expr(void)
             error("pointer type expected, but got %s", ast_to_string(operand));
         return make_ast_uop(AST_DEREF, operand->ctype->ptr, operand);
     }
+    // !, support multi-! such as !!
+    if(is_punct(tok, '!')){
+        Ast *operand = parse_unary_expr();
+        return make_ast_uop('!', ctype_int, operand);
+    }
     unget_token(tok);
-    /* 前缀解析完，开始解析后缀 */
+    /* 前缀解析完，都不满足，则开始解析后缀 */
     return parse_suffix_expr();
 }
 
@@ -551,11 +559,11 @@ static bool is_type_keyword(Token *tok)
     return get_ctype(tok) != NULL;
 }
 
-static void expect(char punct)
+static void expect(int punct)
 {
     Token *tok = read_token();
     if (!is_punct(tok, punct))
-        error("'%c' expected, but got %s", punct, token_to_string(tok));
+        error("'%d' expected, but got %s", punct, token_to_string(tok));
 }
 
 /**
@@ -656,7 +664,7 @@ static Ctype *parse_maybe_array_ctype(Ctype *ctype){
  * decl_var := ctype var
  * for example: int a
  * for example: int *a[100]
- * @return declared variable type
+ * @return declared variable
  */
 static Ast *parse_decl_var(){
     Token *tok = read_token();
@@ -900,6 +908,15 @@ static void ast_to_string_int(Ast *ast, String *buf)
             string_appendf(buf, ";");
         }
         string_appendf(buf, "}");
+        break;
+    case PUNCT_INC:
+        string_appendf(buf, "(++ %s)", ast_to_string(ast->operand));
+        break;
+    case PUNCT_DEC:
+        string_appendf(buf, "(-- %s)", ast_to_string(ast->operand));
+        break;
+    case '!':
+        string_appendf(buf, "(! %s)", ast_to_string(ast->operand));
         break;
     default:
         left = ast_to_string(ast->left);

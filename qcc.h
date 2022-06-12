@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-06-06 15:13:12
+ * @LastEditTime: 2022-06-12 21:09:50
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -53,13 +53,15 @@ enum
     AST_STRING,
     AST_LVAR, // 局部变量
     AST_GVAR, // 全局变量
-    AST_FUNCALL,
+    AST_FUNCALL, // 函数调用
+    AST_FUNCDEF, // 函数定义
     AST_DECL,       // declaration
     AST_ARRAY_INIT, // 数组初始化
     AST_ADDR,       // 代表 & 单目运算
     AST_DEREF,      // 代表 * 单目运算
     AST_IF, 
     AST_FOR, 
+    AST_RET, // ret
     AST_COMPOUND_STMT, // compound stmts
     PUNCT_EQ, // ==
     PUNCT_INC, // ++
@@ -129,17 +131,26 @@ typedef struct Ast
             struct Ast *right;
         };
         // Unary operator，单目运算
-        struct
-        {
-            // 单目运算操作数
-            struct Ast *operand;
-        };
+        // 单目运算操作数
+        struct Ast *operand;
 
-        // Function call
+        // Function call or function definition 
         struct
         {
             char *fname;
-            struct List *args;
+            union
+            {
+                // function call args
+                struct List *args;
+                struct
+                {
+                    // function definition parameters.
+                    struct List *params;
+                    // locals variables in the function
+                    struct List *locals;
+                    struct Ast *body;
+                };
+            };
         };
         // Declaration
         struct
@@ -148,11 +159,9 @@ typedef struct Ast
             struct Ast *decl_init;
         };
         // Array Initializer
-        struct
-        {
-            // 大括号{}中 对数组进行初始化的 ast指针数组
-            struct List *array_init;
-        };
+        // 大括号{}中 对数组进行初始化的 ast指针数组
+        struct List *array_init;
+
         // if statement
         struct
         {
@@ -168,6 +177,8 @@ typedef struct Ast
             struct Ast *forstep;
             struct Ast *forbody;
         };
+        // ret statement 
+        struct Ast *retval;
         /* compound statements(statements in one function or block) */ 
         struct List *stmts;
     };
@@ -216,6 +227,9 @@ extern void emit_expr(Ast *ast);
 extern char *ast_to_string(Ast *ast);
 extern char *ctype_to_string(Ctype *ctype);
 extern void print_asm_header(void);
+extern Ast *parse_decl_or_funcdef();
+extern void emit_toplevel(Ast *ast);
+extern void emit_data_section_str();
 
 extern Ast *parse_decl_or_stmt(void);
 

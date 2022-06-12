@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:48:11
- * @LastEditTime: 2022-06-01 20:07:03
+ * @LastEditTime: 2022-06-12 22:01:12
  * @LastEditors: QQYYHH
  * @Description: 主函数
  * @FilePath: /pwn/qcc/main.c
@@ -23,13 +23,13 @@ int main(int argc, char **argv)
     List *exprs = make_list();
     for (int i = 0; i < EXPR_LEN; i++)
     {
-        Ast *ast = parse_decl_or_stmt();
+        Ast *ast = parse_decl_or_funcdef();
         if (!ast)
             break;
         list_append(exprs, ast);
     }
     if (!want_ast_tree)
-        print_asm_header();
+        emit_data_section_str();
 
     for (Iter *i = list_iter(exprs); !iter_end(i);)
     {
@@ -37,14 +37,7 @@ int main(int argc, char **argv)
         if (want_ast_tree)
             printf("%s", ast_to_string(ast));
         else
-            emit_expr(ast);
+            emit_toplevel(ast);
     }
-    if (!want_ast_tree)
-    {
-        // 栈平衡
-        printf("\tleave\n"
-               "\tret");
-    }
-    printf("\n");
     return 0;
 }

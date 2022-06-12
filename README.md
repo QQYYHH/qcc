@@ -1,7 +1,7 @@
 <!--
  * @Author: QQYYHH
  * @Date: 2022-04-10 14:42:47
- * @LastEditTime: 2022-06-06 16:35:11
+ * @LastEditTime: 2022-06-12 23:02:59
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/README.md
@@ -34,7 +34,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - [x] add ++, --
 - [x] add if
 - [x] add for 
-- [ ] add func definition and return
+- [x] add func definition and return
 - [ ] support negative number
 
 ## issue
@@ -46,6 +46,7 @@ https://github.com/rui314/8cc/commits/master?before=b480958396f159d3794f0d488317
 - a[1] = 1 这种赋值方式已经支持
 - 支持 使用表达式定义数组大小
 - 修复多维数组初始化赋值的bug: a[2][3] = {0, 1, 2, 3,4 ,5}
+- 在对 函数定义抽象语法树 产生代码的过程中，要注意将寄存器压栈，相当于是将实际参数压栈(调用前会将实参传入相应寄存器中)
 
 ## insight
 解析数组元素分成两个核心步骤，比如a[2]，解析为*(a + 2)：

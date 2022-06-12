@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-06 16:19:38
+ * @LastEditTime: 2022-06-12 22:54:14
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -285,7 +285,7 @@ static void emit_assign(Ast *var)
 
 /** 
  * @brief 比较运算：>, <, ==
- * @param ins 指令
+ * @param inst 指令
  */
 static void emit_comp(char *inst, Ast *a, Ast *b){
     emit_expr(a);
@@ -508,7 +508,11 @@ void emit_expr(Ast *ast)
         emit("jmp %s", begin);
         emit_label("%s:", end);
         break;
-        
+    case AST_RET:
+        emit_expr(ast->retval);
+        emit("leave"); // 恢复栈
+        emit("ret");
+        break;
     case AST_COMPOUND_STMT:
         for(Iter *i = list_iter(ast->stmts);!iter_end(i); ){
             emit_expr(iter_next(i));
@@ -580,4 +584,122 @@ void print_asm_header(void)
            "mov %%rsp, %%rbp\n");
     if (locals->len)
         printf("\tsub $%d, %%rsp\n", off);
+}
+
+// 将字符串输出至rodata段，这里只考虑字符串，因为其他全局变量已经在toplevel中输出
+void emit_data_section_str(){
+    if(!globals) return;
+    bool flag = true;
+    for(Iter *i = list_iter(globals); !iter_end(i);){
+        Ast *v = iter_next(i);
+        if(v->type == AST_STRING){
+            if(flag){
+                emit(".section .rodata");
+                flag = false;
+            }
+            emit_label("%s:", v->slabel);
+            emit(".string \"%s\"", quote(v->sval));
+        }
+        else if(v->type != AST_GVAR) error("internal error: %s", ast_to_string(v));
+    }
+}
+
+// save global var value
+static void emit_data_element_value(Ast *ele){
+    assert(ele->ctype->type != CTYPE_ARRAY);
+    switch(ctype_size(ele->ctype)){
+        case 1: emit(".byte %d", ele->ival); break;
+        case 4: emit(".long %d", ele->ival); break;
+        case 8: emit(".quad %d", ele->ival); break;
+        default: error("interal error");
+    }
+}
+
+// save var with initialize value to data segment
+static void emit_data(Ast *ast){
+    emit(".global %s", ast->decl_var->glabel);
+    emit(".data");
+    emit(".size %s, %d", ast->decl_var->glabel, ctype_size(ast->decl_var->ctype));
+    emit_label("%s:", ast->decl_var->glabel);
+    // array = {xxx, xxx, xxx}
+    if(ast->decl_init->type == AST_ARRAY_INIT){
+        for(Iter *i = list_iter(ast->decl_init->array_init); !iter_end(i); ){
+            emit_data_element_value(iter_next(i));
+        }
+    }
+    // array = "xxx"
+    else if(ast->decl_var->ctype->type == CTYPE_ARRAY){
+        assert(ast->decl_init->type == AST_STRING);
+        emit(".string \"%s\"", quote(ast->decl_init->sval));
+    }
+    // char *a = "xxx"
+    else if(ast->decl_init->type == AST_STRING){
+        emit(".quad %s", ast->decl_init->slabel);
+    }
+    else{
+        // 保证初始化值为整数常量
+        assert(ast->decl_init->type == AST_LITERAL && ast->decl_init->ctype->type == CTYPE_INT);
+        emit_data_element_value(ast->decl_init);
+    }
+}
+
+// save var without initialize value to bss segment
+static void emit_bss(Ast *ast){
+    emit(".lcomm %s, %d", ast->decl_var->glabel, ctype_size(ast->decl_var->ctype));
+}
+static void emit_global_var(Ast *ast){
+    if(ast->decl_init) emit_data(ast);
+    else emit_bss(ast);
+}
+
+/**
+ * @brief initialize the runtime of a function
+ * such as .text function name 
+ * pre-alloc stack memeory for parameters and locals varaibles in the function
+ */
+static void emit_func_runtime(Ast *func){
+    if(list_len(func->params) > sizeof(REGS) / sizeof(*REGS))
+        error("Parameter list is too long: %s", func->fname);
+    emit(".text");
+    emit(".global %s", func->fname);
+    emit_label("%s:", func->fname);
+    emit("push %%rbp");
+    emit("mov %%rsp, %%rbp");
+    // 下面计算函数所需要的栈空间，参数 + 局部变量
+    // 首先是 parameters 
+    int off = 0;
+    int idx = 0;
+    for(Iter *i = list_iter(func->params); !iter_end(i); idx++){
+        emit("push %%%s", REGS[idx]); // 将寄存器中保存的实参压栈
+        Ast *p = iter_next(i);
+        off += ceil8(ctype_size(p->ctype)); // 该形参的off 恰好指向已经压栈的实参的起始地址
+        p->loff = off;
+    }
+    // 然后是函数内部定义的局部变量
+    for(Iter *i = list_iter(func->locals); !iter_end(i);){
+        Ast *var = iter_next(i);
+        off += ceil8(ctype_size(var->ctype));
+        var->loff = off;
+    }
+    if(off) emit("sub $%d, %%rsp", off);
+}
+
+static void emit_func_end(){
+    emit("leave");
+    emit("ret");
+}
+
+/**
+ * @brief 一个源程序的开始要么是函数，要么是全局变量的定义
+ */
+void emit_toplevel(Ast *ast){
+    if(ast->type == AST_FUNCDEF){
+        emit_func_runtime(ast);
+        emit_expr(ast->body);
+        emit_func_end();
+    }
+    else if(ast->type == AST_DECL){
+        emit_global_var(ast);
+    }
+    else error("interal error");
 }

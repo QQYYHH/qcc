@@ -2,7 +2,7 @@
 ###
  # @Author: QQYYHH
  # @Date: 2022-04-10 21:13:06
- # @LastEditTime: 2022-06-06 16:34:16
+ # @LastEditTime: 2022-06-12 23:00:54
  # @LastEditors: QQYYHH
  # @Description: 
  # @FilePath: /pwn/qcc/mytest.sh
@@ -29,7 +29,7 @@ function assertequal {
   fi
 }
 
-function testast {
+function testastf {
   result="$(echo "$2" | ./qcc -p)"
   if [ $? -ne 0 ]; then
     echo "Failed to compile $2"
@@ -39,7 +39,11 @@ function testast {
   echo "[*] success on expr: $1"
 }
 
-function test {
+function testast {
+  testastf "$1" "int f(){$2}"
+}
+
+function testf {
   expected="$1"
   expr="$2"
 
@@ -50,6 +54,10 @@ function test {
     exit
   fi
   echo "[*] success on expr: $expr"
+}
+
+function test {
+  testf "$1" "int f() { $2 }"
 }
 
 function testfail {
@@ -66,42 +74,40 @@ function testfail {
 # make -s qcc
 make qcc
 # Parser
-testast '1' '1;'
-testast '(+ (- (+ 1 2) 3) 4)' '1+2-3+4;'
-testast '(+ (+ 1 (* 2 3)) 4)' '1+2*3+4;'
-testast '(+ (* 1 2) (* 3 4))' '1*2+3*4;'
-testast '(+ (/ 4 2) (/ 6 3))' '4/2+6/3;'
-testast '(/ (/ 24 2) 4)' '24/2/4;'
-testast '(decl int a 3)' 'int a=3;'
-testast "(decl char c 'a')" "char c='a';"
-testast '(decl int a 1)(decl int b 2)(= a (= b 3))' 'int a=1;int b=2;a=b=3;'
-testast '"abc"' '"abc";'
-testast "'c'" "'c';"
-testast 'a()' 'a();'
-testast 'a(1,2,3,4,5,6)' 'a(1,2,3,4,5,6);'
-# pointer * & 
-testast '(decl int a 3)(& a)' 'int a=3;&a;'
-testast '(decl int a 3)(* (& a))' 'int a=3;*&a;'
-testast '(decl int a 3)(decl int* b (& a))(* b)' 'int a=3;int *b=&a;*b;'
-# Array
-testast '(decl char* s "abc")' 'char *s="abc";'
-testast '(decl [4]char s "abc")' 'char s[4]="abc";'
-testast '(decl [3]int a {1,2,3})' 'int a[3]={1,2,3};'
-
-# Unary Operator
-testast '{(decl int a 1);(++ a);}' '{int a=1;a++;}'
-testast '{(decl int a 1);(-- a);}' '{int a=1;a--;}'
-testast '(! 1)' '!1;'
-# Comparasion
-testast '(< 1 2)' '1<2;'
-testast '(> 1 2)' '1>2;'
-testast '(== 1 2)' '1==2;'
-# IF
-testast '(if 1 {2;})' 'if(1){2;}'
-testast '(if 1 {2;} {3;})' 'if(1){2;}else{3;}'
-
-# FOR
-testast '(for (decl int a 1) 3 7 {5;})' 'for(int a=1;3;7){5;}'
+testast '(int)f(){1;}' '1;'
+testast '(int)f(){(+ (- (+ 1 2) 3) 4);}' '1+2-3+4;'
+testast '(int)f(){(+ (+ 1 (* 2 3)) 4);}' '1+2*3+4;'
+testast '(int)f(){(+ (* 1 2) (* 3 4));}' '1*2+3*4;'
+testast '(int)f(){(+ (/ 4 2) (/ 6 3));}' '4/2+6/3;'
+testast '(int)f(){(/ (/ 24 2) 4);}' '24/2/4;'
+testast '(int)f(){(decl int a 3);}' 'int a=3;'
+testast "(int)f(){(decl char c 'a');}" "char c='a';"
+testast '(int)f(){(decl char* s "abcd");}' 'char *s="abcd";'
+testast '(int)f(){(decl [5]char s "asdf");}' 'char s[5]="asdf";'
+testast '(int)f(){(decl [5]char s "asdf");}' 'char s[]="asdf";'
+testast '(int)f(){(decl [3]int a {1,2,3});}' 'int a[3]={1,2,3};'
+testast '(int)f(){(decl [3]int a {1,2,3});}' 'int a[]={1,2,3};'
+testast '(int)f(){(decl [3][5]int a);}' 'int a[3][5];'
+testast '(int)f(){(decl [5]int* a);}' 'int *a[5];'
+testast '(int)f(){(decl int a 1);(decl int b 2);(= a (= b 3));}' 'int a=1;int b=2;a=b=3;'
+testast '(int)f(){(decl int a 3);(& a);}' 'int a=3;&a;'
+testast '(int)f(){(decl int a 3);(* (& a));}' 'int a=3;*&a;'
+testast '(int)f(){(decl int a 3);(decl int* b (& a));(* b);}' 'int a=3;int *b=&a;*b;'
+testast '(int)f(){(if 1 {2;});}' 'if(1){2;}'
+testast '(int)f(){(if 1 {2;} {3;});}' 'if(1){2;}else{3;}'
+testast '(int)f(){(for (decl int a 1) 3 7 {5;});}' 'for(int a=1;3;7){5;}'
+testast '(int)f(){"abcd";}' '"abcd";'
+testast "(int)f(){'c';}" "'c';"
+testast '(int)f(){(int)a();}' 'a();'
+testast '(int)f(){(int)a(1,2,3,4,5,6);}' 'a(1,2,3,4,5,6);'
+testast '(int)f(){(return 1);}' 'return 1;'
+testast '(int)f(){(< 1 2);}' '1<2;'
+testast '(int)f(){(> 1 2);}' '1>2;'
+testast '(int)f(){(== 1 2);}' '1==2;'
+testast '(int)f(){(* (+ 1 2));}' '1[2];'
+testast '(int)f(){(decl int a 1);(++ a);}' 'int a=1;a++;'
+testast '(int)f(){(decl int a 1);(-- a);}' 'int a=1;a--;'
+testast '(int)f(){(! 1);}' '!1;'
 
 # Expression
 # Basic arithmetic
@@ -204,8 +210,28 @@ testfail '&1;'
 testfail '&a();'
 testfail '&&a;'
 
+# Function parameter
+testastf '(int)f(int c){c;}' 'int f(int c){c;}'
+testastf '(int)f(int c){c;}(int)g(int d){d;}' 'int f(int c){c;} int g(int d){d;}'
+testastf '(decl int a 3)' 'int a=3;'
+testf 77 'int g(){return 77;} int f(){g();}' 
+testf 79 'int g(int a){return a;} int f(){g(79);}'
+testf 21 'int g(int a,int b,int c,int d,int e,int f){return a+b+c+d+e+f;} int f(){g(1,2,3,4,5,6);}'
+testf 79 'int g(int a){return a;} int f(){g(79);}'
+testf 98 'int g(int *p){return *p;} int f(){int a[]={98};g(a);}'
+testf '99 98 97 1' 'int g(int *p){for(int i = 0; i < 3; i++) { printf("%d ",*p);p=p+1; } 1;} int f(){int a[]={1,2,3};int *p=a;*p=99;p=p+1;*p=98;p=p+1;*p=97;g(a);}'
+
+# Global variable
+testf 21 'int a=21;int f(){a;}'
+testf 22 'int a;int f(){a=22;a;}'
+testf 23 'int a[3];int f(){a[1]=23;a[1];}'
+testf 25 'int a[3]={24,25,26};int f(){a[1];}'
+testf 195 'char *a = "abc";int f(){a[0] + a[1];}' 
+testf 195 'char a[] = "abc"; int f() { a[0] + a[1]; }'
+
 echo "All tests passed"
 make clean
+
 
 # s='int a = 1; int *b = &a; int *c = b + 1; printf("pointer difference is: %d",c - b);777;'
 # echo "$s" | ./qcc

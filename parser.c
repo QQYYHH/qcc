@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-06 16:32:14
+ * @LastEditTime: 2022-06-12 22:27:27
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -16,9 +16,13 @@
 
 #define MAX_ARGS 6
 
-// 全局、局部变量表
+// 全局变量表
 List *globals = EMPTY_LIST;
+
+// 当前函数的局部变量、参数表
+// 每解析完一个函数，这两个变量就清空
 List *locals = EMPTY_LIST;
+List *fparams = EMPTY_LIST;
 
 // int, char 类型
 Ctype *ctype_int = &(Ctype){CTYPE_INT, NULL};
@@ -98,7 +102,7 @@ static Ast *make_ast_int(int val)
 char *make_next_label(void)
 {
     String *s = make_string();
-    string_appendf(s, ".L%d", labelseq++);
+    string_appendf(s, ".LC%d", labelseq++);
     return get_cstring(s);
 }
 
@@ -142,6 +146,17 @@ static Ast *make_ast_funcall(Ctype *ctype, char *fname, List *args)
     r->ctype = ctype;
     r->fname = fname;
     r->args = args;
+    return r;
+}
+
+static Ast *make_ast_funcdef(Ctype *rettype, char *fname, List *params, Ast *body, List *locals){
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_FUNCDEF;
+    r->ctype = rettype;
+    r->fname = fname;
+    r->params = params;
+    r->body = body;
+    r->locals = locals;
     return r;
 }
 
@@ -196,6 +211,14 @@ static Ast *make_for_stmt(Ast *forinit, Ast *forcond, Ast *forstep, Ast *forbody
     return r;
 }
 
+static Ast *make_ret_stmt(Ast *retval){
+    Ast *r = malloc(sizeof(Ast));
+    r->type = AST_RET;
+    r->ctype = NULL;
+    r->retval = retval;
+    return r;
+}
+
 /**
  * @brief 创建数组类型
  * @param ele_ctype 数组元素的类型
@@ -222,6 +245,11 @@ static Ast *find_var(char *name)
 {
     // 先遍历locals
     for(Iter *i = list_iter(locals); !iter_end(i);){
+        Ast *var = iter_next(i);
+        if(!strcmp(name, var->lname)) return var;
+    }
+    // 再遍历 fparams
+    for(Iter *i = list_iter(fparams); !iter_end(i); ){
         Ast *var = iter_next(i);
         if(!strcmp(name, var->lname)) return var;
     }
@@ -337,7 +365,7 @@ static Ast *parse_prim(void)
  * 类型检查，推断当前二元表达式树的类型
  * 根据左右子树的类型推断
  */
-static Ctype *result_type_int(jmp_buf *jmpbuf, char op, Ctype *a, Ctype *b)
+static Ctype *result_type_int(jmp_buf *jmpbuf, int op, Ctype *a, Ctype *b)
 {
     if (a->type > b->type)
         swap(a, b);
@@ -617,7 +645,8 @@ static void check_intexp(Ast *ast) {
  * TODO check the length of the array
  */
 static Ast *parse_decl_init_value(Ast *var)
-{   Ast *init;
+{   
+    Ast *init;
     if (var->ctype->type == CTYPE_ARRAY)
     {
         init = parse_decl_array_init(var->ctype);
@@ -666,13 +695,15 @@ static Ctype *parse_maybe_array_ctype(Ctype *ctype){
  * decl_var := ctype var
  * for example: int a
  * for example: int *a[100]
+ * @param isglobal 当前解析的变量是否是全局变量
  * @return declared variable
  */
-static Ast *parse_decl_var(){
+static Ast *parse_decl_var(bool isglobal){
     Token *tok = read_token();
+    if(!tok) return NULL;
     Ctype *ctype = get_ctype(tok);
     if (!ctype)
-        error("Type expected, but got %s", token_to_string(tok));
+        error("Ctype expected, but got %s", token_to_string(tok));
     /* Maybe pointer ctype */
     for(;;){
         tok = read_token();
@@ -688,19 +719,21 @@ static Ast *parse_decl_var(){
         error("Identifier expected, but got %s", token_to_string(varname));
     /* 继续解析，尝试数组类型 */
     ctype = parse_maybe_array_ctype(ctype);
-    Ast *var = make_ast_lvar(ctype, varname->sval);
+    Ast *var;
+    if(!isglobal) var = make_ast_lvar(ctype, varname->sval);
+    else var = make_ast_gvar(ctype, varname->sval, false);
     return var;
 }
 
 /**
- * 声明 declaration
+ * 局部变量声明
  * with init value    ->   decl := ctype identifer = decl_init; 
  * without init value ->   decl := ctype identifier; 
  * TODO 逗号分隔变量的声明 比如 int a = 1, b = 2;
  */
-static Ast *parse_decl()
+static Ast *parse_local_decl()
 {  
-    Ast *var = parse_decl_var();
+    Ast *var = parse_decl_var(false);
 
     Token *tok = read_token();
     Ast *init = NULL;
@@ -756,6 +789,15 @@ static Ast *parse_for_stmt(){
 }
 
 /**
+ * @brief return_stmt := expr;
+ */
+static Ast *parse_returen_stmt(){
+    Ast *retval = parse_expr(0);
+    expect(';');
+    return make_ret_stmt(retval);
+}
+
+/**
  * @brief parse statement
  * stmt := if | for | { block }
  */
@@ -764,6 +806,7 @@ static Ast *parse_stmt()
     Token *tok = read_token();
     if(is_ident(tok, "if")) return parse_if_stmt();
     if(is_ident(tok, "for")) return parse_for_stmt();
+    if(is_ident(tok, "return")) return parse_returen_stmt();
     if(is_punct(tok, '{')) return parse_compound_stmts();
     unget_token(tok);
     Ast *r = parse_expr(0);
@@ -772,6 +815,7 @@ static Ast *parse_stmt()
 }
 
 /**
+ * @brief 函数内部语句声明
  * decl or stmt
  * stmt就是if, for, return 等语句 或者是多条stmt构成的block
  */
@@ -781,7 +825,7 @@ Ast *parse_decl_or_stmt()
     Token *tok = peek_token();
     if (!tok)
         return NULL;
-    return is_type_keyword(tok) ? parse_decl() : parse_stmt();
+    return is_type_keyword(tok) ? parse_local_decl() : parse_stmt();
 }
 
 /**
@@ -801,6 +845,66 @@ static Ast *parse_compound_stmts()
         unget_token(tok);
     }
     return make_compound_stmt(list);
+}
+
+/**
+ * @brief function definition parameters
+ */
+static List *parse_funcdef_params(){
+    List *params = make_list();
+    Token *tok = read_token();
+    if(is_punct(tok, ')')) return params;
+    unget_token(tok);
+    for(;;){
+        Ast *var = parse_decl_var(false);
+        list_append(params, var);
+        tok = read_token();
+        if(is_punct(tok, ')')) break;
+        if(is_punct(tok, ',')){
+            tok = read_token();
+            if(is_punct(tok, ')')) error("can not find next funcdef args");
+            unget_token(tok);
+        }
+        else error("expect ',' between parameters");
+    }
+    return params;
+}
+
+/**
+ * @brief function definition
+ */
+static Ast *parse_funcdef(Ctype *rettype, char *fname){
+    // 初始化fparams 和 函数内部局部变量表
+    fparams = parse_funcdef_params();
+    locals = make_list();
+    expect('{');
+    Ast *body = parse_compound_stmts();
+    Ast *r = make_ast_funcdef(rettype, fname, fparams, body, locals);
+    // 将fparams 和 locals 置空
+    fparams = NULL;
+    locals = NULL;
+    return r;
+}
+
+/**
+ * @brief parse global declaration or function definition
+ * 注意C程序的开始要么是全局变量的定义，要么是函数的定义
+ * 局部变量的定义 和 statment都是在函数体内部
+ */
+Ast *parse_decl_or_funcdef(){
+    Ast *var = parse_decl_var(true);
+    if(!var) return NULL;
+    Token *tok = read_token();
+    if(is_punct(tok ,'(')){
+        // function definition
+        return parse_funcdef(var->ctype, var->gname);
+    }
+    // global declaration if not function definition
+    Ast *init = NULL;
+    if(is_punct(tok, '=')) init = parse_decl_init_value(var);
+    else unget_token(tok);
+    expect(';');
+    return make_ast_decl(var, init);
 }
 
 char *ctype_to_string(Ctype *ctype)
@@ -857,20 +961,34 @@ static void ast_to_string_int(Ast *ast, String *buf)
         string_appendf(buf, "%s", ast->gname);
         break;
     case AST_FUNCALL:
-        string_appendf(buf, "%s(", ast->fname);
-        for (Iter *i = list_iter(ast->args); !iter_end(i);)
-        {
+        string_appendf(buf, "(%s)%s(", ctype_to_string(ast->ctype), ast->fname);
+        for (Iter *i = list_iter(ast->args); !iter_end(i);) {
             string_appendf(buf, "%s", ast_to_string(iter_next(i)));
             if (!iter_end(i))
-                string_appendf(buf, ",");
+            string_appendf(buf, ",");
         }
         string_appendf(buf, ")");
         break;
+    case AST_FUNCDEF: {
+        string_appendf(buf, "(%s)%s(", ctype_to_string(ast->ctype), ast->fname);
+        for (Iter *i = list_iter(ast->params); !iter_end(i);) {
+            Ast *param = iter_next(i);
+            string_appendf(buf, "%s %s", ctype_to_string(param->ctype), ast_to_string(param));
+            if (!iter_end(i))
+            string_appendf(buf, ",");
+        }
+        string_appendf(buf, ")");
+        ast_to_string_int(ast->body, buf);
+        break;
+    }
     case AST_DECL:
-        string_appendf(buf, "(decl %s %s %s)",
-                       ctype_to_string(ast->decl_var->ctype),
-                       ast->decl_var->lname,
-                       ast_to_string(ast->decl_init));
+        string_appendf(buf, "(decl %s %s",
+                        ctype_to_string(ast->decl_var->ctype),
+                        ast->decl_var->lname);
+        if (ast->decl_init)
+            string_appendf(buf, " %s)", ast_to_string(ast->decl_init));
+        else
+            string_appendf(buf, ")");
         break;
     case AST_ADDR:
         string_appendf(buf, "(& %s)", ast_to_string(ast->operand));
@@ -902,6 +1020,9 @@ static void ast_to_string_int(Ast *ast, String *buf)
                      ast_to_string(ast->forcond),
                      ast_to_string(ast->forstep));
         string_appendf(buf, "%s)", ast_to_string(ast->forbody));
+        break;
+    case AST_RET:
+        string_appendf(buf, "(return %s)", ast_to_string(ast->retval));
         break;
     case AST_COMPOUND_STMT:
         string_appendf(buf, "{");

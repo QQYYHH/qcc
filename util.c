@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-26 15:53:58
- * @LastEditTime: 2022-06-01 16:09:21
+ * @LastEditTime: 2022-06-13 16:54:46
  * @LastEditors: QQYYHH
  * @Description: 
  * @FilePath: /pwn/qcc/util.c
@@ -51,9 +51,10 @@ char *quote(char *p)
     String *s = make_string();
     while (*p)
     {
-        if (*p == '\"' || *p == '\\')
-            string_append(s, '\\');
-        string_append(s, *p);
+        if (*p == '\"' || *p == '\\') string_appendf(s, "\\%c", *p);
+        else if(*p == '\n') string_appendf(s, "\\n");
+        else if(*p == '\t') string_appendf(s, "\\t");
+        else string_append(s, *p);
         p++;
     }
     return get_cstring(s);

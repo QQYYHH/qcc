@@ -1,7 +1,16 @@
 #!/bin/bash
+###
+ # @Author: QQYYHH
+ # @Date: 2022-04-10 14:55:11
+ # @LastEditTime: 2022-06-13 16:58:55
+ # @LastEditors: QQYYHH
+ # @Description: 测试整个源文件作为输入
+ # @FilePath: /pwn/qcc/test_file.sh
+ # welcome to my github: https://github.com/QQYYHH
+### 
 
 function compile {
-  echo "$1" | ./qcc > tmp.s
+  ./qcc < "$1" > tmp.s
   if [ $? -ne 0 ]; then
     echo "Failed to compile $1"
     exit
@@ -16,37 +25,20 @@ function compile {
 
 function test {
   expected="$1"
-  expr="$2"
+  file="$2"
 
-  compile "$expr"
+  compile "$file"
   result="`./tmp.out`"
   if [ "$result" != "$expected" ]; then
     echo "Test failed: $expected expected but got $result"
     exit
   fi
+  echo "[*] success on file $2"
 }
 
-function testfail {
-  expr="$1"
-  echo "$expr" | ./qcc > /dev/null 2>&1
-  if [ $? -eq 0 ]; then
-    echo "Should fail to compile, but succeded: $expr"
-    exit
-  fi
-}
 
 # -s 不输出执行过的命令，silence模式
 make -s qcc
 
-test 0 0
-test abc '"abc"'
-test 3 '1+2'
-test 3 '1 + 2'
-test 10 '1+2+3+4'
-
-testfail '"abc'
-testfail '0abc'
-testfail '2+'
-
-make -s clean
-echo "All tests passed"
+test 8 test/fibo.c
+compile test/nqueen.c

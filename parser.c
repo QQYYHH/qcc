@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 19:35:20
- * @LastEditTime: 2022-06-12 22:27:27
+ * @LastEditTime: 2022-06-13 16:21:08
  * @LastEditors: QQYYHH
  * @Description: parser
  * @FilePath: /pwn/qcc/parser.c
@@ -857,6 +857,8 @@ static List *parse_funcdef_params(){
     unget_token(tok);
     for(;;){
         Ast *var = parse_decl_var(false);
+        // 如果var是数组类型，则转换为指针类型，否则计算形参大小以预分配栈空间时，按照数组类型计算就会出现大问题
+        if(var->ctype->type == CTYPE_ARRAY) var->ctype = make_ptr_type(var->ctype->ptr);
         list_append(params, var);
         tok = read_token();
         if(is_punct(tok, ')')) break;

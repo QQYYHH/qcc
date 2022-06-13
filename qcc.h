@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:14:29
- * @LastEditTime: 2022-06-12 21:09:50
+ * @LastEditTime: 2022-06-13 15:40:51
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/qcc.h
@@ -226,7 +226,6 @@ extern char *make_next_label(void);
 extern void emit_expr(Ast *ast);
 extern char *ast_to_string(Ast *ast);
 extern char *ctype_to_string(Ctype *ctype);
-extern void print_asm_header(void);
 extern Ast *parse_decl_or_funcdef();
 extern void emit_toplevel(Ast *ast);
 extern void emit_data_section_str();

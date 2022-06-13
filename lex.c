@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-04-22 14:30:50
- * @LastEditTime: 2022-06-06 15:55:44
+ * @LastEditTime: 2022-06-13 16:47:49
  * @LastEditors: QQYYHH
  * @Description:
  * @FilePath: /pwn/qcc/lex.c
@@ -130,8 +130,14 @@ static Token *read_string(void)
         if (c == '\\')
         {
             c = getc(stdin);
-            if (c == EOF)
-                error("Unterminated \\");
+            switch(c){
+                case EOF: error("Unterminated \\");
+                case '\\': break;
+                case 'n': c = '\n'; break;
+                case 't': c = '\t'; break;
+                case '\"': c = '\"'; break; 
+                default: error("Unknown quote: %c", c);
+            }
         }
         string_append(s, c);
     }

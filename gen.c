@@ -1,7 +1,7 @@
 /*
  * @Author: QQYYHH
  * @Date: 2022-05-08 21:59:28
- * @LastEditTime: 2022-06-12 22:54:14
+ * @LastEditTime: 2022-06-13 15:40:57
  * @LastEditors: QQYYHH
  * @Description: x64 code generate
  * @FilePath: /pwn/qcc/gen.c
@@ -564,26 +564,6 @@ static int ceil8(int n)
 {
     int rem = n % 8;
     return (rem == 0) ? n : n - rem + 8;
-}
-
-void print_asm_header(void)
-{
-    // 局部变量在栈中的总偏移量
-    int off = 0;
-    for (Iter *i = list_iter(locals); !iter_end(i);)
-    {
-        Ast *p = iter_next(i);
-        off += ceil8(ctype_size(p->ctype));
-        p->loff = off;
-    }
-    emit_data_section();
-    printf(".text\n\t"
-           ".global mymain\n"
-           "mymain:\n\t"
-           "push %%rbp\n\t"
-           "mov %%rsp, %%rbp\n");
-    if (locals->len)
-        printf("\tsub $%d, %%rsp\n", off);
 }
 
 // 将字符串输出至rodata段，这里只考虑字符串，因为其他全局变量已经在toplevel中输出
